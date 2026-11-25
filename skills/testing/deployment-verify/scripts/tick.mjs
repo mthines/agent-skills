@@ -11,6 +11,7 @@
 //   node tick.mjs --draft-contract --from-plan <plan.md> [--pr <n>]
 //                                             the same from an /aw brief, before its criteria are on the PR;
 //                                             prefills flag.key when the brief names exactly one feature flag
+//   node tick.mjs --draft-probes --pr <n>     print a .agents/aw/probes.yml draft to review (rules/probes.md)
 //   node tick.mjs --check-config              validate .agents/aw/release.yml and exit
 //   node tick.mjs --self-test                 simulated rollouts, no network
 //
@@ -28,6 +29,7 @@ import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { decide, DEFAULT_THRESHOLDS } from "./decide.mjs";
+import { ProbeAuthError, draftProbes, probeRunner, runProbe } from "./probe.mjs";
 import { recommend, riskClass, RISK_CLASSES } from "./promote.mjs";
 import { readEvidence, updateSignal } from "./signal.mjs";
 import { parseYaml } from "./yaml-lite.mjs";
@@ -402,6 +404,21 @@ function commandBackend(cmd) {
 
 const iso = (ms) => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
 
+const SEVERITY = { PASS: 0, HOLD: 1, ROLLBACK: 2 };
+const NO_CONTROL = { n: 0, errors: 0, avg_ms: 0 };
+
+// Probe mode: each route probed on both sides is judged by decide.mjs against its own before side, and the
+// worst route is the verdict (ROLLBACK > HOLD > PASS). A route probed on one side only is not compared.
+export function compareRoutes(before, after, thresholds) {
+	return Object.keys(after || {}).filter((r) => before?.[r]).map((route) => ({ route, before: before[route], after: after[route], ...decide({ test: after[route], control: NO_CONTROL, baseline: before[route] }, thresholds) }));
+}
+
+export function sumRoutes(routes) {
+	const xs = Object.values(routes || {});
+	const n = xs.reduce((a, x) => a + x.n, 0);
+	return { n, errors: xs.reduce((a, x) => a + x.errors, 0), avg_ms: n ? Math.round((xs.reduce((a, x) => a + x.avg_ms * x.n, 0) / n) * 10) / 10 : 0 };
+}
+
 /**
  * One tick for one rollout. Pure apart from `io`:
  *   io.now() ms · io.sql(query, {dataset, from, to}) rows · io.setFlag(value) · io.sendTraffic(n)
@@ -429,6 +446,19 @@ export async function tick(state, { contract, config, sha, mergedAt, deployedAt,
 	const valueFor = (pct) => (providerFor(contract, config)?.rollout === "boolean" ? pct > 0 : pct);
 	const trafficFor = (pct) => Math.max(200, Math.ceil((t.min_test_requests / (pct / 100)) * 1.5));
 	const holdAfter = Number.isFinite(config.hold_after) ? config.hold_after : null;
+	// Probe mode (rules/probes.md): no flag, and the repo's probes.yml covers a contract root span.
+	const probing = !contract.flag && Boolean(io.probe);
+	const versionOf = () => s.live_values?.[0] || sha || "unknown";
+	// One probe window. An auth failure is returned, never thrown into samples: it must not become a ROLLBACK.
+	async function probeOnce() {
+		try {
+			return { routes: (await io.probe.run()).routes };
+		} catch (e) {
+			if (e instanceof ProbeAuthError) return { auth: e.message };
+			throw e;
+		}
+	}
+	const authStop = (msg) => end("STOPPED", `probe auth failed — ${msg}`);
 
 	// Send traffic (synthetic environments) or let the window elapse (real traffic); return the window.
 	async function produceWindow(pct, startMs) {
@@ -465,6 +495,13 @@ export async function tick(state, { contract, config, sha, mergedAt, deployedAt,
 				const rows = await io.sql(deployQuery(contract, env.deploy.detect), { dataset: env.dataset, from: iso(now - 15 * 60_000), to: iso(now) });
 				const live = await liveValues(rows, env.deploy.detect, sha, io.contains);
 				if (!live.length) {
+					// The old version still serves: probe it now, so the before side is live, not remembered.
+					if (probing && !s.probe_before) {
+						const r = await probeOnce();
+						if (r.auth) return authStop(r.auth);
+						s.probe_before = { routes: r.routes, at: iso(io.now()), source: "live" };
+						io.log(`probe before (live, old version): ${Object.keys(r.routes).length} route(s)`);
+					}
 					const minutes = env.deploy.timeout_minutes ?? 60;
 					if (mergedAt && now - Date.parse(mergedAt) > minutes * 60_000) return end("STOPPED", `deploy not detected in ${minutes} min — nothing changed`);
 					return s;
@@ -474,6 +511,48 @@ export async function tick(state, { contract, config, sha, mergedAt, deployedAt,
 			}
 			s.phase = "baseline";
 			continue;
+		}
+
+		if (s.phase === "baseline" && probing) {
+			// Started after the deploy: the before side is the last probe recorded on another version.
+			if (!s.probe_before && io.history) {
+				const prev = await io.history.previous(versionOf());
+				if (prev) s.probe_before = { routes: prev.routes, at: prev.at, source: `history ${String(prev.version).slice(0, 12)}` };
+			}
+			Object.assign(s, { phase: "step", step_index: 0, last_passed_value: 0, window: null, hold_since: null });
+			continue;
+		}
+
+		if (s.phase === "step" && probing) {
+			const r = await probeOnce();
+			if (r.auth) return authStop(r.auth);
+			const version = versionOf();
+			s.probe_after = { routes: r.routes, at: iso(io.now()), version };
+			if (io.history) {
+				try {
+					await io.history.record(version, r.routes, s.probe_after.at);
+				} catch (e) {
+					io.log(`probe history not written: ${e.message}`);
+				}
+			}
+			if (!s.probe_before) return end("INCONCLUSIVE", `no before-side probe (deploy already live, no history) — baseline recorded for ${version.slice(0, 12)}`);
+			s.routes = compareRoutes(s.probe_before.routes, r.routes, t);
+			if (!s.routes.length) return end("INCONCLUSIVE", "no route probed on both sides — check each request's route in probes.yml");
+			const worst = s.routes.reduce((a, x) => (SEVERITY[x.verdict] > SEVERITY[a.verdict] ? x : a));
+			const verdict = { verdict: worst.verdict, reason: `${worst.route}: ${worst.reason}` };
+			s.baseline = sumRoutes(s.probe_before.routes);
+			s.steps = [{ value: 100, from: s.probe_after.at, to: s.probe_after.at, test: sumRoutes(r.routes), control: NO_CONTROL, verdict: verdict.verdict, reason: verdict.reason }];
+			io.log(`probe after (${version.slice(0, 12)}): ${verdict.verdict} — ${verdict.reason}`);
+			if (verdict.verdict === "PASS") return end("PASS", `every probed route held against its own before side (${s.probe_before.source})`);
+			if (verdict.verdict === "HOLD") return end("INCONCLUSIVE", `probe window too small: ${verdict.reason} — raise rounds in probes.yml`);
+			s.rollback_verdict = verdict.reason;
+			s.rollback_at = iso(io.now());
+			if ((config.policies?.rollback || "ask") === "never") return end("ESCALATE", `ROLLBACK verdict (${verdict.reason}); rollback policy is never`);
+			if (await io.platformRollback()) {
+				s.phase = "rollback";
+				continue;
+			}
+			return end("ESCALATE", `ROLLBACK verdict (${verdict.reason}); rollback needs a human (reversibility: ${contract.reversibility || "none"})`);
 		}
 
 		if (s.phase === "baseline" && !contract.flag) {
@@ -634,12 +713,13 @@ export function renderReport(s, contract, pr) {
 	const lines = [
 		`DEPLOYMENT ${status}`,
 		`change:   ${pr?.title ? `${pr.title} (#${pr.number})` : "local run"} · flag ${contract.flag?.key || "none"}${contract.flag ? ` via ${contract.flag.provider}` : ""} · ${s.env}`,
-		...(contract.flag ? [] : ["mode:     no flag — before/after only, attribution weaker"]),
+		...(contract.flag ? [] : [s.probe_before || s.probe_after ? "mode:     no flag — synthetic probes, judged per route" : "mode:     no flag — before/after only, attribution weaker"]),
 		`deploy:   ${s.deploy_live_at ? `live at ${s.deploy_live_at}` : "waiting"}`,
 		`baseline: ${s.baseline ? `${s.baseline.n} requests, ${s.baseline.errors} errors, ${s.baseline.avg_ms} ms` : "pending"}`,
 		`step   test n/err/ms    control n/err/ms   verdict`,
 		...rows,
 	];
+	lines.push(...probeLines(s));
 	lines.push(...criteriaLines(pr?.criteria, contract));
 	if (s.hold) {
 		const d = s.hold.decision;
@@ -654,6 +734,23 @@ export function renderReport(s, contract, pr) {
 	if (s.outcome === "ROLLED_BACK") lines.push(`next:     /fix-bug ${pr?.url || "<PR URL>"} — failing window ${s.steps.at(-1)?.from}..${s.steps.at(-1)?.to}`);
 	if (s.outcome === "PASS") lines.push(`not watched: no soak window — run ended at ${s.ended_at}`);
 	return `${REPORT_MARKER}\n\`\`\`text\n${lines.join("\n")}\n\`\`\`\n<!-- deployment-verify:v1:state ${JSON.stringify(s)} -->`;
+}
+
+// The probe block of the report: where each side came from, then one row per compared route.
+export function probeLines(s) {
+	if (!s.probe_before && !s.probe_after) return [];
+	const f = (x) => `${x.n}/${x.errors}/${x.avg_ms}/${x.p95 ?? "-"}`;
+	return [
+		`probe:    before ${s.probe_before ? `${s.probe_before.source} at ${s.probe_before.at}` : "none"} · after ${s.probe_after ? `${s.probe_after.version.slice(0, 12)} at ${s.probe_after.at}` : "pending"}`,
+		...(s.routes?.length ? ["route                    before n/err/avg/p95   after n/err/avg/p95   verdict", ...s.routes.map((r) => `${r.route.padEnd(25)}${f(r.before).padEnd(23)}${f(r.after).padEnd(22)}${r.verdict} ${r.reason}`)] : []),
+	];
+}
+
+// One line per PR per tick, on stdout: the report itself lives in the PR comment.
+export function statusLine(s, pr) {
+	const status = s.phase === "done" ? s.outcome : `IN PROGRESS (${s.phase || "deploy"})`;
+	const detail = s.phase === "done" ? s.reason : s.steps?.at(-1) ? `step ${s.steps.at(-1).value}%: ${s.steps.at(-1).verdict}` : s.deploy_live_at ? `live at ${s.deploy_live_at}` : "waiting for the deploy";
+	return `deployment-verify ${pr?.number ? `#${pr.number}` : "local"}: ${status} — ${detail}`;
 }
 
 // ────────────────────────── state stores ──────────────────────────
@@ -683,6 +780,29 @@ function prStore(number) {
 		},
 		finish() {
 			gh(["pr", "edit", String(number), "--remove-label", LABEL, "--add-label", `${LABEL}:done`]);
+		},
+	};
+}
+
+// Probe results per version, one comment each on one per-repo issue (opt-in: probes.yml defaults.history: issue).
+const HISTORY_TITLE = "deployment-verify baselines";
+const HISTORY_RE = /<!-- deployment-verify:v1:baseline (\{.*?\}) -->/s;
+export function parseHistory(bodies, env, version) {
+	return bodies.map((b) => b?.match(HISTORY_RE)).filter(Boolean).map((m) => JSON.parse(m[1]))
+		.filter((h) => h.env === env && h.version !== version).sort((a, b) => Date.parse(a.at) - Date.parse(b.at)).at(-1) || null;
+}
+function issueHistory(env) {
+	let number = null;
+	const find = () => (number ??= JSON.parse(gh(["issue", "list", "--state", "all", "--search", `"${HISTORY_TITLE}" in:title`, "--json", "number,title", "--limit", "10"])).find((i) => i.title === HISTORY_TITLE)?.number ?? null);
+	return {
+		async previous(version) {
+			if (!find()) return null;
+			const bodies = JSON.parse(gh(["api", `repos/{owner}/{repo}/issues/${number}/comments`, "--paginate", "--jq", "[.[] | select(.user.type == \"Bot\" or (.author_association | IN(\"OWNER\", \"MEMBER\", \"COLLABORATOR\"))) | .body]"]).replace(/\]\s*\[/g, ","));
+			return parseHistory(bodies, env, version);
+		},
+		async record(version, routes, at) {
+			if (!find()) number = Number(gh(["issue", "create", "--title", HISTORY_TITLE, "--body", "Synthetic probe results per deployed version, written by deployment-verify (rules/probes.md). Do not edit."]).trim().split("/").pop());
+			gh(["issue", "comment", String(number), "--body-file", "-"], `${env} ${version}\n<!-- deployment-verify:v1:baseline ${JSON.stringify({ env, version, at, routes })} -->`);
 		},
 	};
 }
@@ -755,6 +875,8 @@ function realIo({ config, contract, pr = null, slug = null }) {
 		if (r.status !== 0) throw new Error(`command failed (${r.status}): ${cmd}\n${(r.stderr || "").slice(0, 500)}`);
 		return r.stdout;
 	};
+	// Probes apply to a no-flag contract only; null when the repo has no probes.yml covering its root spans.
+	const probes = contract.flag ? null : probeRunner({ env: config.env, rootSpans: contract.root_spans });
 	return {
 		now: () => Date.now(),
 		sql: (query, opts) => backend.sql(query, opts),
@@ -776,6 +898,7 @@ function realIo({ config, contract, pr = null, slug = null }) {
 			return false;
 		},
 		log: (m) => console.error(`[deployment-verify] ${m}`),
+		...(probes ? { probe: probes, history: probes.history === "issue" ? issueHistory(config.env) : null } : {}),
 		// Advisory only: printed beside the hold, never acted on (rules/autonomy.md). No promotion rule → no LoreKit call.
 		recommend: async () => {
 			if (!config.promotion) return { ...recommend(null, null), risk_class: null };
@@ -1136,7 +1259,7 @@ async function selfTest() {
 		const real = readFileSync(new URL("./fixtures/plan-ac-flag.md", import.meta.url), "utf8");
 		const ac = (lines) => `## Acceptance Criteria\n\n${lines}\n`;
 		const checks = [
-			["the real brief's AC-5/AC-6 name enableAutomationProposeFlow once", JSON.stringify(planFlags(real)) === '["enableAutomationProposeFlow"]', planFlags(real)],
+			["the real brief's two flag criteria name enableAutomationProposeFlow once", JSON.stringify(planFlags(real)) === '["enableAutomationProposeFlow"]', planFlags(real)],
 			["a guardrail that leaves the code behind a flag untouched names no flag", planFlags("## Guardrails\n\n- Leave the code behind the `legacyCart` flag untouched.\n").length === 0],
 			["a guardrail that ships behind a flag still names it", JSON.stringify(planFlags("## Guardrails\n\n- Ship only behind the `newCart` flag.\n")) === '["newCart"]'],
 			["AC shapes: flag.key is, `k` flag on/off, flag `k`", JSON.stringify(planFlags(ac("- [ ] AC-1 — `flag.key` is `a1`.\n- [ ] AC-2 — with the `b2` flag off, nothing renders.\n- [ ] AC-3 — with flag `c3` on, it renders."))) === '["a1","b2","c3"]'],
@@ -1221,7 +1344,90 @@ async function selfTest() {
 		if (!ok) failed++;
 		console.log(`${ok ? "ok  " : "FAIL"} dash0 auth from telemetry.mcp_server, env override, missing server`);
 	}
-	const total = 39;
+	// Probe mode: the old version serves until `liveAt`, then the new one. io.probe answers by which is live.
+	{
+		const T0 = Date.parse("2026-11-11T10:00:00Z");
+		const BEFORE = { "/mcp": { n: 60, errors: 0, avg_ms: 10, p95: 14 }, "/memories": { n: 20, errors: 0, avg_ms: 900, p95: 1200 } };
+		const MIX = { "/mcp": { n: 20, errors: 0, avg_ms: 10, p95: 14 }, "/memories": { n: 60, errors: 0, avg_ms: 950, p95: 1250 } };
+		function probeWorld({ liveAt = T0 + 120_000, before = BEFORE, after = MIX, history = null, run = null } = {}) {
+			let clock = T0;
+			const queries = [], logs = [], recorded = [];
+			const io = {
+				now: () => clock,
+				sleep: async (ms) => void (clock += ms),
+				setFlag: async () => assertNever(),
+				sendTraffic: async () => {},
+				platformRollback: async () => false,
+				contains: async () => true,
+				sql: async (query) => {
+					queries.push(query);
+					if (/GROUP BY live/.test(query)) return clock >= liveAt ? [{ live: "v2.0.9", n: 50 }] : [];
+					return [{ n: 200, errors: 0, avg_ms: 5 }];
+				},
+				probe: { run: run || (async () => ({ routes: structuredClone(clock < liveAt ? before : after) })) },
+				history: { previous: async (v) => (history && history.version !== v ? history : null), record: async (version, routes) => void recorded.push({ version, routes }) },
+				log: (m) => logs.push(m),
+			};
+			return { io, queries, logs, recorded };
+		}
+		async function drive(w) {
+			let s = null;
+			for (let i = 0; i < 50 && s?.phase !== "done"; i++) {
+				s = await tick(s, { contract: nfContract, config: nfConfig, sha: "m", mergedAt: "2026-11-11T09:59:00Z", io: w.io });
+				await w.io.sleep(60_000);
+			}
+			return s;
+		}
+		const line = (name, ok, s) => {
+			if (!ok) failed++;
+			console.log(`${ok ? "ok  " : "FAIL"} ${name}${s ? `: ${s.outcome} — ${s.reason}` : ""}`);
+		};
+
+		const pooled = decide({ test: sumRoutes(MIX), control: NO_CONTROL, baseline: sumRoutes(BEFORE) }, nfConfig.thresholds).verdict;
+		let s = await drive(probeWorld());
+		line("AC-3 route mix shifts but each route holds: pooled says ROLLBACK, per-route says PASS", pooled === "ROLLBACK" && s.outcome === "PASS" && s.routes.length === 2 && s.routes.every((r) => r.verdict === "PASS"), s);
+
+		s = await drive(probeWorld({ after: { ...MIX, "/memories": { n: 60, errors: 0, avg_ms: 5000, p95: 6000 } } }));
+		line("AC-4 one route regresses: verdict ROLLBACK naming that route", s.steps[0]?.verdict === "ROLLBACK" && /^\/memories: latency/.test(s.steps[0].reason) && s.outcome === "ESCALATE", s);
+
+		const SECRET = "lk_ro_SECRETTOKEN0123456789";
+		const w5 = probeWorld({
+			run: () => runProbe({
+				probe: { requests: [{ name: "list", route: "/memories", http: { path: "/memories" } }] },
+				defaults: { rounds: 30 },
+				identity: { role: "probe", header: "Authorization", check: { http: { path: "/me" } } },
+				tokens: { get: async () => SECRET, canRefresh: true },
+				send: async () => ({ status: 401, ms: 1 }),
+				sleep: async () => {},
+			}),
+		});
+		s = await drive(w5);
+		const windows = w5.queries.filter((q) => !/GROUP BY live/.test(q)).length;
+		line("AC-5 a 401 after one refresh ends STOPPED probe auth failed, no window measured", s.outcome === "STOPPED" && /^probe auth failed/.test(s.reason) && !s.steps.length && !s.routes && windows === 0, s);
+		const everywhere = [JSON.stringify(s), renderReport(s, nfContract, { number: 1, title: "t" }), statusLine(s, { number: 1 }), ...w5.logs].join("\n");
+		line("AC-5 the token appears in no report, state or log", !everywhere.includes(SECRET) && !everywhere.includes(SECRET.slice(6)), s);
+
+		s = await drive(probeWorld());
+		line("AC-6 started before the deploy: the old version is probed live as the baseline", s.probe_before?.source === "live" && s.outcome === "PASS", s);
+		s = await drive(probeWorld({ liveAt: T0, history: { version: "v2.0.8", at: "2026-11-10T10:00:00Z", routes: BEFORE } }));
+		line("AC-6 started after the deploy: the previous version's recorded probe is the baseline", s.probe_before?.source === "history v2.0.8" && s.outcome === "PASS", s);
+		const w6 = probeWorld({ liveAt: T0 });
+		s = await drive(w6);
+		line("AC-6 no live baseline and no history: INCONCLUSIVE, baseline recorded", s.outcome === "INCONCLUSIVE" && /baseline recorded/.test(s.reason) && w6.recorded.length === 1 && w6.recorded[0].version === "v2.0.9", s);
+
+		const st = statusLine(s, { number: 758 });
+		const running = statusLine({ phase: "deploy" }, null);
+		line("AC-7 every tick prints a status line to stdout", st.startsWith("deployment-verify #758: INCONCLUSIVE — no before-side probe") && running === "deployment-verify local: IN PROGRESS (deploy) — waiting for the deploy", null);
+
+		const hist = [
+			"x <!-- deployment-verify:v1:baseline {\"env\":\"production\",\"version\":\"a\",\"at\":\"2026-11-01T00:00:00Z\",\"routes\":{}} -->",
+			"<!-- deployment-verify:v1:baseline {\"env\":\"production\",\"version\":\"b\",\"at\":\"2026-11-02T00:00:00Z\",\"routes\":{}} -->",
+			"<!-- deployment-verify:v1:baseline {\"env\":\"preview\",\"version\":\"c\",\"at\":\"2026-11-03T00:00:00Z\",\"routes\":{}} -->",
+		];
+		const ok = parseHistory(hist, "production", "z")?.version === "b" && parseHistory(hist, "production", "b")?.version === "a" && parseHistory([], "production", "b") === null;
+		line("probe history: latest record on another version in the same environment", ok, null);
+	}
+	const total = 48;
 	console.log(failed ? `${failed}/${total} failed` : `${total}/${total} passed`);
 	process.exit(failed ? 1 : 0);
 }
@@ -1251,6 +1457,17 @@ async function draftCommand(a) {
 	else console.error(`flag: ${flags.length} named in the brief (${flags.join(", ")}) — left out; add the one this change ships behind`);
 }
 
+// --draft-probes: a probes.yml draft from the PR's contract root_spans and its api: criteria, for review.
+function draftProbesCommand(a) {
+	if (!a.pr || a.pr === true) throw new Error("--draft-probes needs --pr <n>");
+	const pr = JSON.parse(gh(["pr", "view", String(a.pr), "--json", "body"]));
+	const { contract, error } = parseContract(pr.body);
+	if (error || !contract) throw new Error(error || "no deployment-verify:v1 contract on the PR — draft one first (--draft-contract)");
+	const comments = JSON.parse(gh(["api", `repos/{owner}/{repo}/issues/${a.pr}/comments`, "--paginate", "--jq", "[.[] | {body, trusted: ((.author_association | IN(\"OWNER\", \"MEMBER\", \"COLLABORATOR\")) or .user.type == \"Bot\")}]"]).replace(/\]\s*\[/g, ","));
+	process.stdout.write(draftProbes(contract, parseCriteria(pr.body, [...comments].reverse())));
+	console.error("review it, add the probe identity to environments.yml, then write .agents/aw/probes.yml and run probe.mjs --check");
+}
+
 function args(argv) {
 	const out = {};
 	for (let i = 0; i < argv.length; i++) {
@@ -1268,6 +1485,7 @@ async function main() {
 	if (a["self-test"]) return selfTest();
 	// Drafting reads no release.yml: it runs before the config loads, so a repo not yet set up can draft.
 	if (a["draft-contract"]) return draftCommand(a);
+	if (a["draft-probes"]) return draftProbesCommand(a);
 	const slug = (() => {
 		try {
 			return execFileSync("gh", ["repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
@@ -1347,9 +1565,11 @@ async function main() {
 				const s = { phase: "done", outcome: "STOPPED", reason: invalid, env: cfg.env, steps: [] };
 				store.write(renderReport(s, contract || {}, store.pr));
 				store.finish();
+				console.log(statusLine(s, store.pr));
 				continue;
 			}
 			const s = await runOne({ store, contract, config: cfg, sha: store.pr.mergeCommit?.oid, mergedAt: store.pr.mergedAt, deployedAt: a["deployed-at"], loop: !!a.run, decision, slug });
+			console.log(statusLine(s, store.pr));
 			if (exitFor(s) === 3) worst = Math.max(worst, 3);
 		} catch (e) {
 			console.error(`#${n}: ${e.message}`);

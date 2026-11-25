@@ -12,7 +12,7 @@ argument-hint: '[run [local|preview|checks]|setup|report] [<pr-url>|<pr-number>|
 license: MIT
 metadata:
   author: mthines
-  version: '4.1.0'
+  version: '4.1.1'
   workflow_type: orchestrator
   tags: [verify, e2e-verification, ui-verify, telemetry-verify, autonomous-workflow, stack-drivers, fix-loop, setup]
 ---

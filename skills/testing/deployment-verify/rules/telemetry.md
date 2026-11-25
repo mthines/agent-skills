@@ -71,6 +71,8 @@ WHERE resource_attributes['service.name'] = '<service>'
   -- AND resource_attributes['<k>'] != '' AND resource_attributes['<k>'] NOT IN ('<live>', ...)   -- before
 ```
 
+A run with probes ([`probes.md`](./probes.md)) does not use this query for its verdict: it reads the probe's own timings per route. It still uses it to detect the deploy and to measure recovery after a rollback.
+
 Recommend `cohort.on: root` in the report whenever a run needed the join: it is cheaper and cannot double-count.
 
 ## D0QL limits (Dash0)

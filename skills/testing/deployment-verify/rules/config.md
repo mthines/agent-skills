@@ -13,6 +13,7 @@ The telemetry MCP server comes from `.agents/aw/telemetry.yml` (`mcp_server`, el
 `release.yml` is read by the controller with a built-in YAML subset parser: block and flow maps and lists, quoted strings, numbers, booleans, comments.
 Anchors, tags, and multi-line strings fail with the line number; a `release.json` beside it wins when present.
 Check the file with `node ${CLAUDE_SKILL_DIR}/scripts/tick.mjs --check-config`.
+A no-flag change can also be probed: `.agents/aw/probes.yml` beside it ([`probes.md`](./probes.md)), checked with `probe.mjs --check`.
 
 ## Telemetry and exceptions
 
@@ -145,7 +146,7 @@ promotion: { min_agree_streak: 5, min_review_seconds: 120, risk_classes: [ui], m
 
 ## `setup`
 
-`/deployment-verify setup` writes `release.yml` once; a re-run fills a missing `pipeline:` block (step 6) and validates the rest (step 7):
+`/deployment-verify setup` writes `release.yml` once; a re-run fills a missing `pipeline:` block (step 6) and validates the rest (step 8):
 
 1. Copy the template when the file is absent.
 2. Detect flag systems: OpenFeature (`@openfeature/`, `open-feature/go-sdk`), the Vercel Flags SDK (`flags/next`, `@vercel/flags`), PostHog (`posthog-node`, `posthog-js`), LaunchDarkly, Unleash, a repo-local registry. Write one provider per system and ask for its `set` command; never invent one.
@@ -158,4 +159,5 @@ promotion: { min_agree_streak: 5, min_review_seconds: 120, risk_classes: [ui], m
 6. Find the default-branch workflow (`.github/workflows/*.yml` with `on: push` to the default branch) that builds or releases, and write `pipeline:` (`workflow`, `required_jobs`, `timeout_minutes`) from it.
    A job that runs on every merge (the tests, a build) goes in `required_jobs`; leave out a job gated on `needs.<x>.outputs…` or a release condition (`release_created`, a tag check), since it skips when nothing is due and would read red on every merge that releases nothing.
    Several candidates: pick the one whose every-merge jobs build or test (`CI` running `pnpm build` and `pnpm test`), not one whose only every-merge job is a release bot (`release-please`); ask only when two build or test. None that builds: write no `pipeline:` and say so.
-7. Validate: every `set` path exists and is executable; `dataset` is readable; `tick.mjs --check-config` (it loads `production`) prints `release.yml ok`.
+7. Offer probes when the repo serves an HTTP API: `tick.mjs --draft-probes --pr <n>` prints a draft; show it, never write it unreviewed, and ask for the probe identity's env var name ([`probes.md`](./probes.md#auth--a-bearer-identity)).
+8. Validate: every `set` path exists and is executable; `dataset` is readable; `tick.mjs --check-config` (it loads `production`) prints `release.yml ok`.
