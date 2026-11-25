@@ -88,7 +88,7 @@ Preflight never blocks on its own; a gap blocks only when it leaves a criterion 
 | --- | --- | --- | --- |
 | `ok` | — | — | run Build |
 | `limited` | no | — | run Build; name each gap once under `Degraded:` |
-| `limited` | yes: a `telemetry:` criterion with no `telemetry`, a signed-in UI criterion with no `sign-in`, a rollout criterion with no `flag-provider` | no | stop before Build: no stage is recorded; end the trace with `telemetry.mjs finish --outcome stopped --reason "<gap>"`; terminal contract with `Needs you: <gap> — <its fix>, or re-run with --accept-gaps` |
+| `limited` | yes: a `telemetry:` criterion with no `telemetry`, a signed-in UI criterion with no `sign-in`, a rollout criterion with no `flag-provider` | no | stop before Build: no stage is recorded; end the trace with `node "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/telemetry.mjs" finish --outcome stopped --reason "<gap>"`; terminal contract with `Needs you: <gap> — <its fix>, or re-run with --accept-gaps` |
 | `limited` | yes | yes | run Build; the gap goes into the Build reason and `Needs you:` |
 
 `ci-on-draft: no` decides nothing here: Ready undrafts to get CI (that notifies reviewers), and under `--keep-draft` Ready holds.

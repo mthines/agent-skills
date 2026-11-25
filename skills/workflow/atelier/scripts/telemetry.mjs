@@ -208,7 +208,10 @@ export function buildRun(records, now = nowNs()) {
 		if (r.t === "facts") Object.assign(run.facts, r.facts || {});
 		// A stage already open stays open: `--record build skipped` opens ready, then `--next` names ready again.
 		else if (r.t === "stage") {
-			if (open?.name !== r.name) start(r.name, ns, r.attrs);
+			if (open?.name !== r.name) {
+				start(r.name, ns, r.attrs);
+				open.implicit = r.implicit === true;
+			}
 		}
 		else if (r.t === "attr") {
 			if (r.target === "stage" && open) Object.assign(open.attrs, r.attrs || {});
@@ -238,9 +241,12 @@ export function buildRun(records, now = nowNs()) {
 			if (!RUN_ENDING.has(r.decision) && !(r.stage === "merge" && r.decision === "proceed") && NEXT_STAGE[r.stage]) start(NEXT_STAGE[r.stage], ns);
 		} else if (r.t === "finish") {
 			run.finish = { ...r, ns };
+			run.outcome0 = r.outcome;
 			run.endNs = ns;
 		}
 	}
+	// A preflight stop never ran the stage preflight opened on spec: drop it, so the run reached preflight.
+	if (open?.implicit && run.outcome0 === "stopped") open = null;
 	close(run.endNs);
 	for (const w of run.waits) if (w.endNs === null) w.endNs = run.endNs;
 	const last = run.decisions.at(-1) ?? null;
@@ -520,7 +526,7 @@ export const markPreflight = guarded(async ({ startNs, status, gaps = [], pr = n
 	const g = [...gaps].sort();
 	appendRecord(dir, { t: "attr", target: "stage", attrs: { "preflight.status": status, "preflight.gaps": g.join(",") || null, "preflight.gap_count": g.length } });
 	appendRecord(dir, { t: "attr", target: "run", attrs: { "preflight.status": status, "preflight.gaps": g.join(",") || null, "preflight.gap_count": g.length, ...(pr ? { "run.resumed": true } : {}) } });
-	appendRecord(dir, { t: "stage", name: pr ? "setup" : "build" });
+	appendRecord(dir, { t: "stage", name: pr ? "setup" : "build", implicit: true });
 	return dir;
 });
 
@@ -737,6 +743,9 @@ async function selfTest() {
 	const skippedBuild = buildRun([rec({ t: "run", run_id: "r4", facts: {} }, 0), rec({ t: "stage", name: "setup" }, 1), rec({ t: "decision", stage: "build", decision: "skipped", reason: "existing PR" }, 2),
 		rec({ t: "stage", name: "ready" }, 3), rec({ t: "decision", stage: "ready", decision: "hold", reason: "CI: pending" }, 9), rec({ t: "finish" }, 9)]);
 	t("a stage named again while open stays one span", skippedBuild.stages.map((s) => `${s.name}:${s.decision}`).join() === "setup:skipped,ready:hold", skippedBuild.stages.map((s) => `${s.name}:${s.decision}`).join());
+	const stopped = buildRun([rec({ t: "run", run_id: "r5", facts: {} }, 0), rec({ t: "stage", name: "preflight" }, 0), rec({ t: "stage", name: "build", implicit: true }, 1),
+		rec({ t: "finish", outcome: "stopped", reason: "telemetry gap" }, 5)]);
+	t("a preflight stop reaches preflight, with no empty build span", stopped.stageReached === "preflight" && stopped.stages.map((s) => s.name).join() === "preflight" && stopped.outcome === "stopped");
 	const resumed = buildRun([rec({ t: "run", run_id: "r2", facts: {} }, 0), rec({ t: "decision", stage: "merge", decision: "proceed", reason: "merged ff", pr }, 50), rec({ t: "finish" }, 50)]);
 	t("a decision with no open stage spans from the last boundary", resumed.stages.length === 1 && resumed.stages[0].name === "merge" && resumed.outcome === "merged");
 	const failedRun = buildRun([rec({ t: "run", run_id: "r3", facts: {} }, 0), rec({ t: "stage", name: "build" }, 1), rec({ t: "decision", stage: "build", decision: "failed", reason: "CHECKS 3/5 FAIL: AC-1" }, 9), rec({ t: "finish" }, 9)]);

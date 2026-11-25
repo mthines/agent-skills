@@ -38,7 +38,7 @@ Durations stay on histograms and on Dash0's span metrics, and every metric attri
 ## Why outcomes are transitions
 
 `outcomes.mjs` re-classifies every merged PR on every run, so emitting each result would count one PR dozens of times.
-It emits only a final outcome that differs from the one LoreKit already stores, which the caller passes as `stored`, so each change is counted once; a clean PR that is later reverted is counted in both, and the dashboard's rate says so.
+It emits only a final outcome that differs from the one LoreKit already stores, which the caller passes as `stored`, so each change is counted once; a sweep that exports and then loses its LoreKit write (a failure, or a concurrent run) exports that change again, and a clean PR that is later reverted is counted in both, and the dashboard's rate says so.
 
 ## Why one exporter
 
