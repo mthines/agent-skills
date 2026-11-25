@@ -10,6 +10,8 @@ tags: [atelier, design, rationale]
 - [Sequence, never re-implement](#sequence-never-re-implement)
 - [The merge gate](#the-merge-gate)
 - [Ready on real CI](#ready-on-real-ci)
+- [Preflight](#preflight)
+- [A skipped companion holds Build](#a-skipped-companion-holds-build)
 - [State in the PR](#state-in-the-pr)
 - [Ground truth](#ground-truth)
 - [Out of scope](#out-of-scope)
@@ -46,6 +48,22 @@ Atelier exists to merge, so Ready marks a draft ready for review before `prepare
 An external status counts only when the repo marks it required, because preview deployers such as Vercel report success on drafts whose real CI was skipped, so "any check passed" certifies nothing.
 The helper lives with `prepare` because `prepare` must stand alone; atelier calls it by path.
 A Ready `proceed` stores the verdict it was based on, and the merge gate reads CI again at the head right before the merge, because a state comment is data anyone can edit and a comment written before the evidence existed must not be trusted on resume.
+
+## Preflight
+
+A run that cannot prove a criterion should say so before it spends hours building, not in the last line after the merge.
+The common gaps are a repo with no flag provider, so the rollout is a human flip; no telemetry config, so a `telemetry:` criterion cannot be graded; and workflows that skip drafts, so Ready must undraft and notify reviewers.
+`preflight.mjs` reads only committed config, so its answer is reproducible and needs no network; whether an MCP tool answers depends on the session, so the agent checks that one call itself.
+It reuses `deployment-verify`'s `loadConfig()` and YAML reader instead of parsing `release.yml` a second time, so a config the preflight calls healthy is one `/deployment-verify` loads.
+A gap blocks only when a stated criterion depends on it, because most runs need only part of the suite, and a preflight that stopped on every missing file would teach users to pass `--accept-gaps` by reflex.
+Its line rides in the state comment so a reviewer reading the PR sees what the run could not prove.
+
+## A skipped companion holds Build
+
+`aw` names every companion it did not run in its `Degraded:` line, but a line in a long terminal block is easy to miss, and a nested sub-agent that runs short skips the review, `create-pr`, and the quality pass to save context.
+Atelier merges, so a review that did not happen must stop the run where a human sees it: a Build `hold` with `skipped: <names>` shows in the state comment's header.
+The waiver is the user's alone (`--accept-skip`), recorded in the decision log, because an agent that could waive its own skipped review would learn to.
+Running `/atelier` at the top level prevents most skips: the nested context is what runs short.
 
 ## State in the PR
 
