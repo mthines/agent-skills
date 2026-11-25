@@ -114,7 +114,9 @@ export function table(checks) {
 export const PROFILE = join("memory", "observability-profile", "INDEX.md");
 
 // `pipeline: false` = release.yml has no `pipeline:` block (absent file included); Deliver reads that block.
-export function setupPlan(checks, { profile = true, pipeline = true } = {}) {
+export const TRACKER = join(".agents", "aw", "tracker.yml");
+
+export function setupPlan(checks, { profile = true, pipeline = true, tracker = true } = {}) {
 	const gap = new Set(checks.filter((c) => !c.ok && !isDecided(c)).map((c) => c.name));
 	const steps = checks.filter(isDecided).map(() => ({
 		kind: "decided",
@@ -126,6 +128,7 @@ export function setupPlan(checks, { profile = true, pipeline = true } = {}) {
 	const deployFixes = [...(gap.has("flag-provider") ? ["flag-provider"] : []), ...(pipeline ? [] : ["pipeline (no release.yml pipeline:)"])];
 	if (deployFixes.length) steps.push({ kind: "skill", call: 'Skill("deployment-verify", "setup")', fixes: deployFixes });
 	if (!profile) steps.push({ kind: "skill", call: 'Skill("measurable", "setup")', fixes: [`observability-profile (no ${PROFILE})`] });
+	if (!tracker) steps.push({ kind: "skill", call: 'Skill("ticket", "setup")', fixes: [`tracker (no ${TRACKER})`] });
 	const ci = checks.find((c) => c.name === "ci-on-draft" && !c.ok);
 	if (ci) {
 		steps.push({
@@ -154,10 +157,10 @@ export const PIPELINE_MANUAL = "MANUAL: pipeline — release.yml has no pipeline
 // Before/after of the preflight checks only: the profile is reported by measurable's own setup, and a missing
 // pipeline: block by the PIPELINE_MANUAL line, so neither is counted here.
 // What setup writes that no preflight row reads: shown as rows and named after the count, never counted in it.
-const SETUP_FILES = { pipeline: "release.yml pipeline:", profile: "observability profile" };
+const SETUP_FILES = { pipeline: "release.yml pipeline:", profile: "observability profile", tracker: "tracker.yml" };
 
 export async function setupState(repo) {
-	return { pipeline: await hasPipeline(repo), profile: existsSync(join(repo, PROFILE)) };
+	return { pipeline: await hasPipeline(repo), profile: existsSync(join(repo, PROFILE)), tracker: existsSync(join(repo, TRACKER)) };
 }
 
 export function compareTable(before, after, { was: wasFiles = null, now: nowFiles = null } = {}) {
@@ -171,7 +174,7 @@ export function compareTable(before, after, { was: wasFiles = null, now: nowFile
 	let line = `SETUP: ${fixed.length} fixed, ${remaining.length} remaining${remaining.length ? ` (${remaining.join(", ")})` : ""}`;
 	if (nowFiles) {
 		const has = (v) => (v === undefined || v === null ? "—" : v ? "present" : "missing");
-		const files = Object.entries(SETUP_FILES).map(([k, label]) => ({ label, was: wasFiles?.[k], now: nowFiles[k] }));
+		const files = Object.entries(SETUP_FILES).filter(([k]) => k in nowFiles).map(([k, label]) => ({ label, was: wasFiles?.[k], now: nowFiles[k] }));
 		rows.push(...files.map((f) => `| ${f.label} | ${has(f.was)} | ${has(f.now)} | — |`));
 		const notes = files.map((f) => (f.now ? (f.was === false ? `${f.label} added` : null) : `${f.label} missing`)).filter(Boolean);
 		if (notes.length) line += `; ${notes.join(", ")}`;
@@ -324,6 +327,7 @@ async function selfTest() {
 	const bare = [flagCheck({ present: false }), telemetryCheck(null), signInCheck(null), ciDraftCheck([])];
 	const plan = planLines(setupPlan(bare, { profile: false }));
 	t("setup: sign-in and telemetry go to one aw-verify setup, before deployment-verify", plan[0] === 'SETUP: Skill("aw-verify", "setup") — fixes sign-in, telemetry' && /deployment-verify.*flag-provider/.test(plan[1]), plan.join(" / "));
+	t("setup: a missing tracker.yml adds ticket setup, last", planLines(setupPlan(bare, { tracker: false })).at(-1) === 'SETUP: Skill("ticket", "setup") — fixes tracker (no .agents/aw/tracker.yml)');
 	t("setup: a missing profile adds measurable setup; a present one does not", plan.some((l) => /measurable/.test(l)) && !planLines(setupPlan(bare)).some((l) => /measurable/.test(l)));
 	const manual = planLines(setupPlan([ci]));
 	t("setup: ci-on-draft is one manual line naming the workflow", manual.length === 1 && /^MANUAL: ci-on-draft — no — 1 of 2 skip drafts \(ci\.yml\)/.test(manual[0]), manual.join(" / "));

@@ -6,7 +6,7 @@ description: >
   the squash-merge only when a user-visible diff ships behind a
   deployment-verify flag contract — then reads the default-branch pipeline and fixes a red one once, and says
   what a human does next. Resumable from a sticky PR comment; invoke with /atelier.
-argument-hint: 'setup | <request> | <pr-url|#n> [--unattended] [--keep-draft] [--accept-gaps] [--accept-skip <name,…>] [--no-deliver]'
+argument-hint: 'setup | <request> | <pr-url|#n> [--ticket <id|url>] [--unattended] [--keep-draft] [--accept-gaps] [--accept-skip <name,…>] [--no-deliver]'
 license: MIT
 disable-model-invocation: true
 metadata:
@@ -39,6 +39,7 @@ It owns no build, review, verify, or deploy logic: each stage is one delegation,
 | `setup` | Only as the sole argument (`/atelier setup SSO for admins` is a request). Ready the repo for runs: preflight, then each gap handed to the skill that fixes it, then a before/after table ([`setup`](#setup)). Runs no stage. |
 | `<request>` | Free text: start at Build. |
 | `<pr-url\|#n>` | An existing PR: skip Build (`skipped`, reason `existing PR`) and resume from its state comment. |
+| `--ticket <id\|url>` | The ticket this work belongs to; [Step 0](#step-0--setup) links it instead of asking. |
 | `--unattended` | No human is present: Build forwards `--no-confirm` to `aw` and tells it to run `interview` with `--non-interactive`, so a `blocking` question ends the run as `failed` instead of waiting. |
 | `--keep-draft` | Ready leaves the PR a draft; when CI did not run on the draft (`ci-ran.mjs` prints `CI: not-run`), Ready records `hold` (reason `CI not run: draft — <its reason>`). |
 | `--no-deliver` | Stop at the merge: skip the [Deliver](#after-the-merge) step (the default-branch pipeline read, its one fix, and the revert). |
@@ -57,6 +58,7 @@ The setup skills it calls ask the user questions, so it runs interactively only:
 | `sign-in`, `telemetry` | `SETUP: Skill("aw-verify", "setup") — fixes <gaps>` (one call for both) |
 | `flag-provider`, or `release.yml` without `pipeline:` | `SETUP: Skill("deployment-verify", "setup") — fixes <what is missing>` (one call for both) |
 | no `memory/observability-profile/INDEX.md` | `SETUP: Skill("measurable", "setup") — fixes observability-profile (…)` |
+| no `.agents/aw/tracker.yml` | `SETUP: Skill("ticket", "setup") — fixes tracker (…)` |
 | `ci-on-draft` | `MANUAL: ci-on-draft — <the workflows that skip drafts> — <the fix>` |
 | `flag-provider` with `release.yml` → `providers: []` | `DECIDED: flag-provider — …`: an answer, not missing setup; never delegated, never under `Needs you:` |
 
@@ -72,7 +74,7 @@ The setup skills it calls ask the user questions, so it runs interactively only:
    The called skill owns its questions, its files, and its validation; never write `.agents/aw/*` or the observability profile yourself, and never answer its questions for the user.
    A call that stops or that the user declines → note it for `Ran:` and run the next one.
 4. Print every `MANUAL:` line, with the GitHub one from step 1, for `Needs you:`; never edit `.github/workflows/` here.
-5. After: run `node "$A/preflight.mjs" --compare setup-before.json` and print its table, adding its `MANUAL: pipeline` line, when printed, to `Needs you:`; when the `telemetry` row is `ok`, call the tool it names once, as Step 0 item 3 does.
+5. After: run `node "$A/preflight.mjs" --compare setup-before.json` and print its table, adding its `MANUAL: pipeline` line, when printed, to `Needs you:`; when the `telemetry` row is `ok`, call the tool it names once, as Step 0 item 4 does.
 6. Commit nothing: pass on the paths the setup skills printed for the user to review and commit.
 
 ```text
@@ -117,14 +119,29 @@ Run `/atelier` at the top level of a session, never inside a dispatched sub-agen
 
    `GH_OK` → `ACCESS_PATH=gh`; no output with `mcp__github__*` tools present → `mcp`: read the PR and comments with the MCP tools, then pass files and bodies to the scripts' offline flags; neither → `none`: print the terminal contract with `Needs you: GitHub access` and stop.
    The scripts' `--pr`, `--fetch`, and `--upsert` modes need `gh`.
-3. **Preflight.** From the target repo's checkout, run `node "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/preflight.mjs" --model "<your model id>" --ticket "<ticket id or URL>" --task "<request title, ≤ 120 chars>"` (add `--pr <pr-url>` when resuming a PR; pass `--ticket` only when the request names a ticket, for example `/atelier AI-3112` or its URL), print its table, and keep its last line (`PREFLIGHT: ok|limited — <n> gaps (…)`) for the first `--record` (`--preflight "<line>"`).
+3. **Ticket.** Decide the run's ticket with the `ticket` skill's `ticket.mjs --decide`, from the target repo's checkout (no `tracker.yml` → it only links a named ticket):
+
+   ```bash
+   TK="${TICKET_DIR:-$HOME/.claude/skills/ticket}/scripts/ticket.mjs"
+   node "$TK" --decide --request "<the request>" [--ticket <id|url the user passed>] [--unattended under --unattended]
+   ```
+
+   | Prints | Do |
+   | --- | --- |
+   | `TICKET: link <id>` | `TICKET=<id>` |
+   | `TICKET: ask` | Ask once: "Create a ticket for this?" — yes → `Skill("ticket", "create \"<request>\"")`, `TICKET=` its id; no → `TICKET=none` |
+   | `TICKET: create` | `Skill("ticket", "create \"<request>\"")`, `TICKET=` its id |
+   | `TICKET: skip — <why>` | `TICKET=none`; a `require: ask` skip goes under `Needs you:` (`no ticket — <why>`) |
+
+   A resumed PR keeps the ticket its PR body links; the script is absent or exits 1 → `TICKET=none` and `Degraded: ticket — <reason>`.
+4. **Preflight.** From the target repo's checkout, run `node "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/preflight.mjs" --model "<your model id>" --ticket "$TICKET" --task "<request title, ≤ 120 chars>"` (add `--pr <pr-url>` when resuming a PR; drop `--ticket` when `TICKET=none`), print its table, and keep its last line (`PREFLIGHT: ok|limited — <n> gaps (…)`) for the first `--record` (`--preflight "<line>"`).
    When the `telemetry` row is `ok`, call the telemetry tool it names once (a cheap list or query); no tool or an error makes `telemetry` a gap, added to the line.
    Then decide with the [preflight table](#preflight).
    Preflight also starts the run's trace; the scripts below record every stage, and [`rules/telemetry.md`](./rules/telemetry.md) lists the three things you add (**Why:** [`references/telemetry.md`](./references/telemetry.md)).
-4. Probe LoreKit: `memory.*` tools present and one call answers.
+5. Probe LoreKit: `memory.*` tools present and one call answers.
    Absent or failing → one line `Degraded: lorekit unreachable — decision log and outcomes skipped`, and every LoreKit step below is a no-op; no stage waits on it.
-5. Run the outcome sweep in [`rules/decision-log.md` § Outcomes](./rules/decision-log.md#outcomes) once, before any stage.
-6. With a PR: read its state (`node "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/state.mjs" --fetch --pr <pr-url> > state.md`) and its head (`gh pr view <pr-url> --json headRefOid -q .headRefOid`), then `node "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/state.mjs" --next --head <sha> --body-file state.md` names the stage to run.
+6. Run the outcome sweep in [`rules/decision-log.md` § Outcomes](./rules/decision-log.md#outcomes) once, before any stage.
+7. With a PR: read its state (`node "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/state.mjs" --fetch --pr <pr-url> > state.md`) and its head (`gh pr view <pr-url> --json headRefOid -q .headRefOid`), then `node "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/state.mjs" --next --head <sha> --body-file state.md` names the stage to run.
    A merged PR makes `--next` print `stop`: run [Deliver](#after-the-merge) on it unless `--no-deliver`, so a session that died during the pipeline wait resumes there.
    Pass the PR URL, not a bare number: `state.mjs` takes owner/repo from the URL, and from cwd's `origin` only for a number.
    No atelier comment yet: record Build as `skipped` (reason `existing PR`) before `--next`, so it returns `ready` and `aw` never runs on a PR that exists.
@@ -158,6 +175,7 @@ After **every** stage decision, do both, in this order:
    Build's record also takes `--memory "lorekit=<ok|unreachable>,lessons_used=<n>"` ([`rules/telemetry.md` § What you add](./rules/telemetry.md#what-you-add)).
    Ready `proceed` also takes `--ci-file ci.json`, the CI evidence below; `state.mjs` refuses Ready `proceed` without green evidence at `--head` (exit 2).
 2. Write one `bus` event ([`rules/decision-log.md`](./rules/decision-log.md)).
+3. On a `proceed` with a ticket: `Skill("ticket", "move <TICKET> <stage>")`; on Build also `Skill("ticket", "link <TICKET> <pr-url>")`. A tracker failure is one `Degraded:` line, never a stage outcome.
 
 A decision of `refuse`, `hold`, or `failed` ends the run at Step 4.
 A Build that fails before a PR exists has nowhere to record: skip step 1, write the bus event, end the trace (`node "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/telemetry.mjs" finish --stage build --decision failed --reason "<r>"`), and stop.
@@ -175,6 +193,7 @@ Atelier merges this PR. A user-visible change must sit behind a feature flag (re
 ```
 
 Under `--unattended` add the line `No human is present: run interview with --non-interactive; a blocking question ends the run.`
+With a ticket, add the line `Link ticket <TICKET>: put "<node "$TK" --pr-line --ticket <TICKET>>" in the PR body.`
 
 - Ready records the head it ran on and the CI evidence; `--next` returns `ready` when the head moved, or when the Ready `proceed` carries no green evidence for this head (a comment written before evidence existed, or by hand).
 - The merge gate reads CI again at the head, right before the merge: a Ready `proceed` never stands in for CI that is not green now.
@@ -315,6 +334,7 @@ Emit this block on every exit:
 ATELIER RUN
 - Stage reached: [build | ready | merge | stop]
 - PR: [URL | none]
+- Ticket: [<id> | none — <why>]
 - Merge: [merged <sha> | refused: <reason> | not reached]
 - Deliver: [green <run url> | red: <reason> | fix PR <url> | revert PR <url> | reverted <revert PR url> | skipped: <reason> | not reached]
 - Degraded: [steps skipped and why, or "none"]

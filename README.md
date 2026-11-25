@@ -148,7 +148,7 @@ How it works inside: [`full-tier.md`](./skills/workflow/autonomous-workflow/aw/r
 | ----- | ------------ |
 | **`workflow/`** | *End-to-end orchestrators* |
 | [`aw`](./skills/workflow/autonomous-workflow/aw/SKILL.md) | Ships a task end to end: brief, build until green, fresh-eyes review, draft PR. |
-| [`/atelier`](./skills/workflow/atelier/SKILL.md) | Takes a request or a PR to a merged PR — build, get green, merge — and refuses to merge a user-visible change that has no feature-flag contract. Stops after the merge and tells you how to roll it out. `/atelier setup` runs preflight and hands each gap to the setup skill that fixes it. |
+| [`/atelier`](./skills/workflow/atelier/SKILL.md) | Takes a request or a PR to a merged PR — build, get green, merge — and refuses to merge a user-visible change that has no feature-flag contract. Stops after the merge and tells you how to roll it out. `/atelier setup` runs preflight and hands each gap to the setup skill that fixes it; with a `tracker.yml`, each run links or creates its ticket. |
 | [`/fix-bug`](./skills/workflow/fix-bug/SKILL.md) | Fixes one bug from a stack trace, span, recording, or ticket, behind a failing test. |
 | [`/implement-suggestion`](./skills/workflow/implement-suggestion/SKILL.md) | Applies PR review comments, one commit each, and resolves the threads. |
 | **`quality/`** | *Code, tests, plans, AI apps* |
@@ -167,6 +167,7 @@ How it works inside: [`full-tier.md`](./skills/workflow/autonomous-workflow/aw/r
 | [`/ci-auto-fix`](./skills/delivery/ci-auto-fix/SKILL.md) | Diagnoses red CI and fixes it — never by weakening a check. |
 | [`/prepare`](./skills/delivery/prepare/SKILL.md) | Gets a PR or its stack green — conflicts, CI, review threads — and with `--merge` squash-merges bottom to top. |
 | [`/resolve-conflicts`](./skills/delivery/resolve-conflicts/SKILL.md) | Resolves merge and rebase conflicts; asks on the ambiguous ones. |
+| [`/ticket`](./skills/delivery/ticket/SKILL.md) | Ties work to the repo's tracker (Linear, GitHub issues, or none): links a named ticket, asks or creates one per the repo's `tracker.yml`, and moves it as the PR goes from build to merge. |
 | [`/attach-media`](./skills/delivery/attach-media/SKILL.md) | Uploads screenshots and recordings into a PR so they render inline. |
 | [`/github-actions-author`](./skills/delivery/github-actions-author/SKILL.md) | Writes and reviews fast, cheap GitHub Actions workflows. |
 | **`testing/`** | *UI verification and end-to-end tests* |
