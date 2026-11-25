@@ -21,7 +21,7 @@ Fixes #192.
 
 Checks-only run: each criterion is a command run on this branch, and on the base first where it can run there. Nothing needs a human.
 
-<sub>`h1h1h1h` · checks-only · 0 findings · updated 2026-11-25 14:00 UTC</sub>
+<sub>`abc1234` · checks-only · 0 findings · updated 2026-11-25 14:00 UTC</sub>
 
 <details><summary>Details</summary>
 

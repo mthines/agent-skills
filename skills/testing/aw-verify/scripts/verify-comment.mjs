@@ -637,13 +637,19 @@ export function checkReport(prBody, comments = [], { ui = false } = {}) {
 
 // The merge's question, stricter than a complete report: every AC holds. A complete report can still say
 // `❌ Not verified` or `⛔ Blocked`, which `--check` accepts (the run finished) and a merge must not.
-export function provenProblems(prBody, comments = []) {
+// With `head` (the PR's live head), a report run on another commit is not proof of this one.
+export function provenProblems(prBody, comments = [], { head = null } = {}) {
   const regions = parseRegions(bodyBlock(prBody) || comments.find((c) => c.startsWith(MARKER)) || "");
   const failed = parseIntent(regions.get("intent") || "").filter((c) => c.id.startsWith("AC-") && c.status === "❌").map((c) => c.id);
   const first = (regions.get("aggregate") || "").split("\n").find((l) => l.trim()) || "";
   const problems = [];
   if (failed.length) problems.push(`criteria failed their proof: ${failed.join(", ")}`);
   if (/^##\s+(?:❌|⛔)/.test(first)) problems.push(`the verdict is "${first.replace(/^##\s+/, "").slice(0, 60)}"; a merge needs ✅ Verified or ⚠️ Verified with open items`);
+  if (head && head.length >= 7 && regions.get("aggregate")) {
+    const sha = shaOf(regions.get("aggregate"));
+    if (!sha) problems.push("the report names no commit, so it cannot be tied to the PR head: re-run the proof");
+    else if (sha !== head.slice(0, 7)) problems.push(`the report was run on ${sha}; the PR head is ${head.slice(0, 7)}: re-run the proof on the head`);
+  }
   return problems;
 }
 
@@ -1023,6 +1029,9 @@ function selfTest() {
     assert(checkReport(body(bad)).length === 0 && provenProblems(body(bad)).some((p) => p.includes("AC-2")) && provenProblems(body(bad)).some((p) => p.includes("Not verified")), "proven: a complete ❌ report passes --check but not --proven");
     assert(provenProblems(body(part)).some((p) => p.includes("Blocked")), "proven: a ⛔ verdict is not proven");
     assert(provenProblems(body(ok)).length === 0 && provenProblems(body(skip)).length === 0, "proven: ✅ and ⚠️ are proven");
+    assert(provenProblems(body(ok), [], { head: "abcdef1999" }).length === 0, "proven: a report on the live head is proven");
+    assert(provenProblems(body(ok), [], { head: "1234567aaa" }).some((p) => p.includes("abcdef1") && p.includes("1234567")), "proven: a report on an older commit is not proof of the head");
+    assert(provenProblems(body(skip), [], { head: "1234567aaa" }).some((p) => p.includes("names no commit")), "proven: a report with no commit cannot be tied to the head");
     }
     assert(!checkLocal({ intent, report }).some((p) => p.includes("AC-2")), "local gate: an api: AC ⏭️ (tests-only) under ✅ stays allowed");
     const marked = applyMarks(fx("open", "intent.md"), { "AC-2": { status: "✅" } });
@@ -1085,6 +1094,7 @@ else if (isMain) {
         process.exit(0);
       }
       if (!opt("--pr")) throw new Error("--checks needs --pr, --local <dir>, or --print");
+      if (!opt("--head")) throw new Error("--checks --pr needs --head <sha>: the commit the runs were recorded on, which the merge gate compares with the PR head");
       console.log(upsert({ pr: opt("--pr"), repo: opt("--repo"), section: "intent", content: intent, replaceAll: false, to: opt("--to") ?? "auto" }));
       console.log(upsert({ pr: opt("--pr"), repo: opt("--repo"), section: "aggregate", content: report, replaceAll: true, to: opt("--to") ?? "auto" }));
       process.exit(0);
@@ -1115,7 +1125,8 @@ else if (isMain) {
       const slug = opt("--repo") || checkPr.match(/github\.com\/([^/]+\/[^/]+)\/pull\//)?.[1] || gh(["repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"]);
       const body = Buffer.from(gh(["api", `repos/${slug}/pulls/${num}`, "--jq", ".body // \"\" | @base64"]).trim(), "base64").toString("utf8");
       const comments = gh(["api", `repos/${slug}/issues/${num}/comments`, "--paginate", "--jq", ".[] | (.body | @base64)"]).split("\n").filter(Boolean).map((b) => Buffer.from(b, "base64").toString("utf8")).reverse();
-      const problems = [...checkReport(body, comments, { ui: has("--ui") }), ...(has("--proven") ? provenProblems(body, comments) : [])];
+      const liveHead = has("--proven") ? gh(["api", `repos/${slug}/pulls/${num}`, "--jq", ".head.sha"]).trim() : null;
+      const problems = [...checkReport(body, comments, { ui: has("--ui") }), ...(has("--proven") ? provenProblems(body, comments, { head: liveHead }) : [])];
       if (problems.length) { console.error(`verify-comment: the PR's report is incomplete:\n${problems.map((p) => `  - ${p}`).join("\n")}`); process.exit(1); }
       console.log("report complete: intent region ticked, aggregate in the template shape" + (has("--ui") ? ", ui-verify spec present" : "") + (has("--proven") ? ", every criterion proven" : ""));
       process.exit(0);

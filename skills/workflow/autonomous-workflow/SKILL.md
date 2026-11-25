@@ -189,7 +189,7 @@ Lite proves every change before the PR: a UI change in the browser, the same way
    Copy every `Degraded: flag <key> not restored …` line `aw-verify` printed into the run's `Degraded:` verbatim, and its restore command into `Needs you:`.
 2. A failed `ui:` criterion, a `❌ not verified` verdict, or a `telemetry:` AC whose receipt is `contradicts` re-enters Phase 3 under the same turn cap.
    Any other `telemetry:` receipt that is not `confirms` goes under `Degraded:`, as Full Step 4.1 leaves it unpassed.
-3. A UI diff and no `.agents/aw/environments.yml` → checks mode as in step 0, each `ui:` AC no test reaches recorded `unsatisfiable` (the verdict caps at `⚠️`), `verify run: not configured` under `Degraded:`, and `run /aw-verify setup` under `Needs you:`; never block on setup.
+3. A UI diff and no `.agents/aw/environments.yml` → checks mode as in step 0, each `ui:` AC no test reaches recorded `unsatisfiable` (the verdict caps at `⚠️`; `create-pr` Step 6.4 authors the `ui-verify` spec block, so Phase 6's `--check --ui` still passes), `verify run: not configured` under `Degraded:`, and `run /aw-verify setup` under `Needs you:`; never block on setup.
 4. Print the `verify run:` line from Full's `AW EVIDENCE` block ([`aw/rules/full-tier.md` § Step 4](./aw/rules/full-tier.md#step-4--verify-walkthrough-pr-evidence)) in Lite's `AW EVIDENCE` block.
 
 ```text

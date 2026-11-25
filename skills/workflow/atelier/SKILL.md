@@ -201,12 +201,12 @@ No new check within 5 minutes → Ready `hold`, reason `CI not run: no checks st
 1. **Hand-back.** Find aw's terminal block, the hand-back marker `AW RUN COMPLETE`.
    Take the PR URL from the block's `Delivered:` line, or from the one-line form Micro and Lite may print (`AW RUN COMPLETE — Lite, PR <url>, …`).
    No block, or no PR URL in either form → Build `failed`, reason = its `Needs you:` line (or `no AW RUN COMPLETE block`); bind `PR` and its head sha otherwise.
-2. **Companions.** Save aw's hand-back block to `aw.txt`, run the contract half of the gate once (step 4 judges the same output and exit code; exit 2 there leaves no `user_visible`, so pass `--ui-diff yes`), then check the companions:
+2. **Companions.** Save aw's hand-back block to `aw.txt`, run the contract half of the gate once (step 4 judges the same output and exit code), then check the companions:
 
    ```bash
    A="${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts"
    node "$A/merge-gate.mjs" --pr <pr-url> --contract-only > gate.json; echo $? > gate.exit
-   node "$A/state.mjs" --companions --aw-file aw.txt --ui-diff <gate.json's user_visible: yes|no> [--accept-skip <the user's names>]
+   node "$A/state.mjs" --companions --aw-file aw.txt [--accept-skip <the user's names>]
    ```
 
    `COMPANIONS: proceed` → continue; `COMPANIONS: hold — skipped: <names>` → Build `hold` with that reason, and `Needs you: run <names> on <pr-url>, or re-run /atelier <pr-url> --accept-skip <names>`.
