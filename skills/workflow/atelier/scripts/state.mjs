@@ -6,8 +6,11 @@
 //
 //   node state.mjs --next   --head <sha> [--body-file <f>]   prints the stage to run: build|ready|merge|stop
 //   node state.mjs --record --stage <s> --decision <d> --head <sha> [--reason <r>] [--pr <n>] [--body-file <f>]
-//                  [--ci-file <f>]                         prints the re-rendered comment body; Ready `proceed`
-//                                                          needs --ci-file: prepare's ci-ran.mjs output, green at --head
+//                  [--ci-file <f>] [--preflight <line>]    prints the re-rendered comment body; Ready `proceed`
+//                                                          needs --ci-file: prepare's ci-ran.mjs output, green at --head;
+//                                                          --preflight stores preflight.mjs's `PREFLIGHT:` line once
+//   node state.mjs --companions --aw-file <f> [--ui-diff] [--accept-skip a,b]
+//                                                          prints `COMPANIONS: proceed|hold — <reason>` for aw's hand-back
 //   node state.mjs --parse  [--body-file <f>]               prints the state JSON, or null
 //   node state.mjs --fetch  --pr <url|n>                    prints the existing comment body via gh (empty when none)
 //   node state.mjs --upsert --pr <url|n> --body-file <f>    edits the sticky comment in place, or creates it (gh)
@@ -20,7 +23,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 
-import { isMain, makeTester, parseArgs } from "./lib.mjs";
+import { companionDecision, isMain, makeTester, parseArgs, parseDegraded, requiredCompanions } from "./lib.mjs";
 
 export const MARKER = "<!-- atelier:v1 -->";
 const STATE_RE = /<!-- atelier:v1:state (\{.*?\}) -->/s;
@@ -65,11 +68,12 @@ export function next(state, head) {
 	return "stop";
 }
 
-export function record(state, { stage, decision, head, reason = "", pr = null, ci = null, at = new Date().toISOString() }) {
+export function record(state, { stage, decision, head, reason = "", pr = null, ci = null, preflight = null, at = new Date().toISOString() }) {
 	if (!STAGES.includes(stage)) throw new Error(`unknown stage ${stage} (want ${STAGES.join("|")})`);
 	if (!DECISIONS.includes(decision)) throw new Error(`unknown decision ${decision} (want ${DECISIONS.join("|")})`);
 	const s = state ? structuredClone(state) : { v: 1, pr: null, stages: {} };
 	if (pr) s.pr = pr;
+	if (preflight) s.preflight = preflight;
 	const entry = { decision, at, sha: head || null, reason };
 	if (ci) entry.ci = { state: ci.state, ran: ci.ran, head: ci.head, basis: ci.basis, ran_checks: (ci.ran_checks || []).slice(0, 5), reason: ci.reason };
 	// Skipped CI proves nothing: Ready `proceed` is written only with ci-ran.mjs evidence that is green on this head.
@@ -106,6 +110,7 @@ export function render(state) {
 		"",
 		`Stage reached: **${state.stage ?? "none"}**${header(state)}`,
 		"",
+		...(state.preflight ? [`Preflight: \`${state.preflight.replace(/`/g, "'").replace(/\n/g, " ")}\``, ""] : []),
 		"| Stage | Decision | Head | At | Reason |",
 		"| --- | --- | --- | --- | --- |",
 		...rows,
@@ -248,6 +253,24 @@ function selfTest() {
 	t("a PR URL with a trailing path still names its repo", repoSlug("https://github.com/acme/web/pull/41/files", origin) === "acme/web" && prNumber("https://github.com/acme/web/pull/41/files") === "41");
 	t("a bare number falls back to cwd origin", repoSlug("41", origin) === "other/checkout" && repoSlug("#41", origin) === "other/checkout");
 	t("an https origin parses too", repoSlug(41, () => "https://github.com/a/b.git\n") === "a/b");
+	const p = record(null, { stage: "build", decision: "proceed", head: "a1", preflight: "PREFLIGHT: limited — 1 gap (flag-provider)" });
+	t("a preflight line renders under the header and survives later records", render(record(p, { stage: "ready", decision: "hold", head: "a1", reason: "x" })).includes("Preflight: `PREFLIGHT: limited — 1 gap (flag-provider)`"));
+	t("a state without preflight renders no preflight line", !render(s).includes("Preflight:"));
+	// Companions: what aw's `Degraded:` line says did not run.
+	const block = (deg, tier = "Full") => `AW RUN COMPLETE\n- Tier: ${tier}\n- Delivered: https://github.com/a/b/pull/1\n- Degraded: ${deg}\n- Needs you: nothing`;
+	t("✗ Degraded: none → proceed", companionDecision(block("none")).decision === "proceed");
+	const held = companionDecision(block("review-loop skipped (context budget)"));
+	t("✓ Degraded: review-loop skipped → hold", held.decision === "hold" && held.reason === "skipped: review-loop", JSON.stringify(held));
+	const many = parseDegraded(block("create-pr skipped (opened with gh, to save context); /fit and /ux skipped, lorekit unreachable"));
+	t("several skips split on ; and commas outside parentheses", many.skipped.join() === "create-pr,quality-pass" && many.items.length === 3, JSON.stringify(many));
+	t("a non-companion degradation does not hold", companionDecision(block("lorekit unreachable — lessons skipped")).decision === "proceed");
+	t("the one-line Micro form parses", companionDecision("AW RUN COMPLETE — Micro, PR https://x/pull/2, Degraded: none, Needs you: nothing").decision === "proceed");
+	t("Micro requires no quality pass", companionDecision("AW RUN COMPLETE — Micro, PR https://x/pull/2, Degraded: fit skipped, Needs you: nothing").decision === "proceed");
+	t("aw-verify is required only on a UI diff", companionDecision(block("aw-verify skipped (no browser)")).decision === "proceed" && companionDecision(block("aw-verify skipped (no browser)"), { uiDiff: true }).decision === "hold");
+	t("required companions by tier", requiredCompanions({ tier: "Micro", uiDiff: true }).join() === "review-loop,create-pr" && requiredCompanions({ tier: "Lite", uiDiff: true }).join() === "review-loop,create-pr,quality-pass,aw-verify");
+	const acc = companionDecision(block("review-loop skipped (context budget)"), { accept: ["review-loop"] });
+	t("--accept-skip from the user proceeds and says so", acc.decision === "proceed" && acc.reason === "accepted skip: review-loop (user)");
+	t("no Degraded: line holds", companionDecision("AW RUN COMPLETE\n- Tier: Full").decision === "hold");
 	return done();
 }
 
@@ -261,11 +284,16 @@ function main() {
 		} else if (a.upsert) upsert(a.pr, a["body-file"]);
 		else if (a.parse) console.log(JSON.stringify(parse(readBody(a)), null, 2));
 		else if (a.next) console.log(next(parse(readBody(a)), a.head));
+		else if (a.companions) {
+			const accept = typeof a["accept-skip"] === "string" ? a["accept-skip"].split(",").map((x) => x.trim()) : [];
+			const d = companionDecision(readFileSync(a["aw-file"], "utf8"), { uiDiff: a["ui-diff"] === true || a["ui-diff"] === "yes", accept });
+			console.log(`COMPANIONS: ${d.decision}${d.reason ? ` — ${d.reason}` : ""}`);
+		}
 		else if (a.record) {
 			const ci = typeof a["ci-file"] === "string" ? JSON.parse(readFileSync(a["ci-file"], "utf8").replace(/\n?CI: .*\s*$/, "")) : null;
-			const s = record(parse(readBody(a)), { stage: a.stage, decision: a.decision, head: a.head, reason: a.reason === true ? "" : a.reason || "", pr: a.pr, ci });
+			const s = record(parse(readBody(a)), { stage: a.stage, decision: a.decision, head: a.head, reason: a.reason === true ? "" : a.reason || "", pr: a.pr, ci, preflight: typeof a.preflight === "string" ? a.preflight : null });
 			process.stdout.write(`${render(s)}\n`);
-		} else throw new Error("pass one of --next, --record, --parse, --fetch, --upsert, --self-test");
+		} else throw new Error("pass one of --next, --record, --companions, --parse, --fetch, --upsert, --self-test");
 	} catch (e) {
 		console.error(`state: ${e.message}`);
 		process.exit(2);

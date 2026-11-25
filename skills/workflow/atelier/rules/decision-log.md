@@ -35,9 +35,10 @@ memory.write {
 1. `user_visible` and `has_flag_contract` come from the last `merge-gate.mjs` JSON on this head (Build's early gate fills them); when the gate has not run on this head (a run started from an existing PR, or a head that moved), run it once with `--pr <pr-url> --contract-only` to fill them (it decides nothing at that point, and skips the CI read).
    When that JSON carries a `warning` (no flag provider), `has_flag_contract` is `true` and the `reason` ends with the warning.
 2. A merge `proceed` also carries `merge_sha`, the squash commit; the outcome sweep reads it.
-3. A Build that failed before a PR exists uses the worktree's branch for the scope, `pr: 0`, and `failed-{ISO timestamp}` in place of `{decision}-{sha7}`.
-4. A `skipped` Build is not a decision and writes no event.
-5. `kind` and `host` are set explicitly: LoreKit infers them only from `loop::<x>-lessons` tags.
+3. A Build `proceed` or `hold` also carries `preflight` (the `PREFLIGHT:` line), and `accepted_skip` / `accepted_gaps` (comma lists) only when the user passed `--accept-skip` / `--accept-gaps`, so a waiver is always attributable to the user.
+4. A Build that failed before a PR exists uses the worktree's branch for the scope, `pr: 0`, and `failed-{ISO timestamp}` in place of `{decision}-{sha7}`.
+5. A `skipped` Build is not a decision and writes no event.
+6. `kind` and `host` are set explicitly: LoreKit infers them only from `loop::<x>-lessons` tags.
 
 ```text
 ✗ key: "atelier-decisions::pr-41-merge"                  # a proceed after a refusal on the same head overwrites the refusal

@@ -16,6 +16,13 @@ Per stage (`build`, `ready`, `merge`): `decision` (`proceed | skipped | refuse |
 A Ready `proceed` also carries `ci`: the `prepare` helper `ci-ran.mjs`'s verdict (`state`, `ran`, `head`, `reason`), passed as `--record … --ci-file ci.json`.
 `--record` refuses Ready `proceed` (exit 2) unless that verdict is `green` with `ran: true` at `--head`.
 At the top: the last stage recorded and, after a `refuse`, `hold`, or `failed`, its reason (`· refused: …`, `· held: …`, `· failed: …`).
+Under it, once recorded: `Preflight:` with `preflight.mjs`'s last line, stored at the top level of the state by the first `--record … --preflight "<line>"` and kept by every later record.
+A Build `hold` for companions that did not run carries reason `skipped: <names>`, which `state.mjs --companions` prints.
+
+```text
+✗ node state.mjs --record --stage build --decision proceed --reason "Degraded: review-loop skipped"   # an unreviewed PR walks on
+✓ node state.mjs --companions --aw-file aw.txt   # COMPANIONS: hold — skipped: review-loop → record Build hold with that reason
+```
 
 ```text
 ✗ node state.mjs --record --stage ready --decision proceed --head b56dfb5 --reason "16 checks skipped on draft"
