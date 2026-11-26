@@ -346,7 +346,7 @@ export function stateOf(run) {
 export function addStateGauge(ex, run, atNs) {
 	const [, name] = String(run.facts.repo || "").split("/");
 	const terminal = Boolean(run.finish);
-	const bucket = terminal ? reasonBucket(run.finish?.reason ?? run.lastDecision?.reason ?? "") : null;
+	const bucket = terminal ? (run.duplicate ? "duplicate" : reasonBucket(run.finish?.reason ?? run.lastDecision?.reason ?? "")) : null;
 	ex.gauge(STATE_GAUGE, Number(atNs) / 1e9, {
 		"atelier.run.id": run.runId,
 		"atelier.work.ref": workRef(run.facts),
