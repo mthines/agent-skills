@@ -104,7 +104,7 @@ Every file is optional; each one unlocks a little more.
 | `.agents/aw/environments.yml`, `telemetry.yml` | signed-in UI checks and telemetry proof | `/aw-verify setup` |
 | `.agents/aw/release.yml` | flag rollouts, the pipeline Deliver reads, and the deploy detection that turns on the verify | `/deployment-verify setup` |
 | `.agents/aw/tracker.yml` | a linked or new ticket for every run | `/ticket setup` |
-| `.agents/aw/merge.yml` | waiting for your repo's auto-approval before the merge, and `sensitive_paths` that atelier never merges | you, by hand |
+| `.agents/aw/merge.yml` | waiting for your repo's auto-approval before the merge, and `manual_merge_paths` that atelier never merges | you, by hand |
 
 ---
 
