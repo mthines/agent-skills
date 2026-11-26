@@ -135,7 +135,7 @@ A follow-up on an open PR runs this step again before pushing; only with `--pr-r
    verify run: .agent/<branch>/verify/report.md — browser <green|red|not run (<reason>)>, telemetry <confirms|contradicts|ambiguous|null|not run (<reason>)> · preview: /ui-verify run <pr-url>
    ```
 
-   Omit the `verify run:` line when Step 4.1 took `VERIFY_RUN: checks` and the brief has no `telemetry:` criterion.
+   Omit the `verify run:` line when Step 4.1 took `VERIFY_RUN: checks` on a diff with no UI file and the brief has no `telemetry:` criterion.
 
 ## Shared machines
 
