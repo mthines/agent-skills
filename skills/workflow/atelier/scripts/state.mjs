@@ -23,6 +23,9 @@
 //                                                          prints `RESUME: none|companions|sentinel|early-gate|record`, the first
 //                                                          step not done (sentinel and early-gate count only on --head); --aw-out
 //                                                          writes the stored hand-back. Checkpoints live beside the telemetry ledger.
+//   --record … --backfill                                  marks the entry `backfilled`: written after the fact, shown as
+//                                                          "reconstructed after the fact", never read by the merge gate as
+//                                                          a live Ready record, and kept out of the run's telemetry
 //   --record … --no-ci                                     Ready `proceed` on ci-ran's "no checks reported" in a repo with no
 //                                                          CI workflow (preflight.mjs repoHasCi on cwd or --repo-dir); refused otherwise
 //   node state.mjs --parse  [--body-file <f>]               prints the state JSON, or null
@@ -95,7 +98,7 @@ export function next(state, head) {
 	return "stop";
 }
 
-export function record(state, { stage, decision, head, reason = "", pr = null, ci = null, preflight = null, noCi = false, at = new Date().toISOString() }) {
+export function record(state, { stage, decision, head, reason = "", pr = null, ci = null, preflight = null, noCi = false, backfill = false, at = new Date().toISOString() }) {
 	if (!RECORDABLE.includes(stage)) throw new Error(`unknown stage ${stage} (want ${RECORDABLE.join("|")})`);
 	if (!DECISIONS.includes(decision)) throw new Error(`unknown decision ${decision} (want ${DECISIONS.join("|")})`);
 	// Every recorded pair has a pre-rendered card (card.mjs ENDINGS); any other would link a missing image.
@@ -104,7 +107,7 @@ export function record(state, { stage, decision, head, reason = "", pr = null, c
 	const s = state ? structuredClone(state) : { v: 1, pr: null, stages: {} };
 	if (pr) s.pr = pr;
 	if (preflight) s.preflight = preflight;
-	const entry = { decision, at, sha: head || null, reason };
+	const entry = { decision, at, sha: head || null, reason, ...(backfill ? { backfilled: true } : {}) };
 	if (ci) entry.ci = { state: ci.state, ran: ci.ran, head: ci.head, basis: ci.basis, ran_checks: (ci.ran_checks || []).slice(0, 5), reason: ci.reason, ...(noCi && isNoCiEvidence(ci) ? { no_ci: true } : {}) };
 	// Skipped CI proves nothing: Ready `proceed` is written only with ci-ran.mjs evidence that is green on this head.
 	if (stage === "ready" && decision === "proceed" && !readyEvidenceOk(entry, head)) {
@@ -200,7 +203,7 @@ export function render(state, { assetBase = ASSET_BASE } = {}) {
 	const rows = RECORDABLE.map((stage) => {
 		const e = state.stages[stage];
 		if (!e) return `| ⚪ | ${title(stage)} | not reached | | | |`;
-		return `| ${ICON[e.decision]} | ${title(stage)} | ${WORD[e.decision]} | ${e.sha ? `\`${e.sha.slice(0, 7)}\`` : ""} | ${when(e.at)} | ${cell(e.reason)} |`;
+		return `| ${ICON[e.decision]} | ${title(stage)} | ${WORD[e.decision]} | ${e.sha ? `\`${e.sha.slice(0, 7)}\`` : ""} | ${when(e.at)} | ${e.backfilled ? "_reconstructed after the fact_ · " : ""}${cell(e.reason)} |`;
 	});
 	const ci = state.stages.ready?.ci;
 	const ciLine = ci && `**CI at \`${String(ci.head || "").slice(0, 7)}\`:** ${ci.state === "green" ? "🟢" : ci.no_ci ? "⚪ no CI in this repo —" : "🔴"} ${cell(ci.reason)}${ci.ran_checks?.length ? ` (${ci.ran_checks.map((c) => `\`${cell(c)}\``).join(", ")})` : ""}`;
@@ -342,6 +345,8 @@ function selfTest() {
 	t("after build, ready is next", next(parse(body), "a1") === "ready");
 	s = record(s, { stage: "build", decision: "skipped", head: "a1", reason: "existing PR" });
 	t("a skipped build counts as done", next(s, "a1") === "ready");
+	const bf = record(null, { stage: "build", decision: "proceed", head: "a1", reason: "ran", backfill: true });
+	t("a backfilled entry is marked and rendered as reconstructed", bf.stages.build.backfilled === true && render(bf).includes("reconstructed after the fact") && !JSON.stringify(s).includes("backfilled"));
 	s = record(s, { stage: "ready", decision: "failed", head: "a1", reason: "CI red" });
 	t("a failed ready runs ready again", next(s, "a1") === "ready");
 	const green = (head) => ({ state: "green", ran: true, head, basis: "actions", ran_checks: ["test"], reason: "1 GitHub Actions check run ran and passed" });
@@ -511,10 +516,10 @@ async function main() {
 			const ciDir = typeof a["repo-dir"] === "string" ? a["repo-dir"] : process.cwd();
 			if (a["no-ci"] && a.pr && !repoMatchesPr(ciDir, String(a.pr))) throw new Error(`--no-ci: ${ciDir} is not a clone of the PR's repository (origin differs), so it cannot say the repo has no CI; run from the clone or pass --repo-dir`);
 			if (a["no-ci"] && repoHasCi(ciDir)) throw new Error("--no-ci: this repo has a workflow that runs on pull_request or push, so no checks reported is not \"no CI\"");
-			const s = record(parse(readBody(a)), { stage: a.stage, decision: a.decision, head: a.head, reason: a.reason === true ? "" : a.reason || "", pr: a.pr, ci, preflight: typeof a.preflight === "string" ? a.preflight : null, noCi: !!a["no-ci"] });
+			const s = record(parse(readBody(a)), { stage: a.stage, decision: a.decision, head: a.head, reason: a.reason === true ? "" : a.reason || "", pr: a.pr, ci, preflight: typeof a.preflight === "string" ? a.preflight : null, noCi: !!a["no-ci"], backfill: !!a.backfill });
 			process.stdout.write(`${render(s)}\n`);
 			// Deliver is display-only in the state; its telemetry is the bus event rules/deliver.md names.
-			if (STAGES.includes(a.stage)) await markDecision({
+			if (STAGES.includes(a.stage) && !a.backfill) await markDecision({
 				stage: a.stage, decision: a.decision, reason: a.reason === true ? "" : a.reason || "", head: a.head || null,
 				pr: typeof a.pr === "string" ? a.pr : s.pr, memory: typeof a.memory === "string" ? parseMemory(a.memory) : null,
 			});
