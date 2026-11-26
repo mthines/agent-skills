@@ -212,7 +212,7 @@ export function render(state, { assetBase = ASSET_BASE } = {}) {
 		MARKER,
 		`<img src="${assetBase}/mascot/${v.mood}.png" width="20" height="20" alt=""> **<a href="${README_URL}">Atelier</a>** · ${v.title}`,
 		"",
-		`<picture><source media="(prefers-color-scheme: dark)" srcset="${assetBase}/cards/${key}-dark.png"><img src="${assetBase}/cards/${key}-light.png" width="100%" alt="${altText(o)}"></picture>`,
+		`<picture><source media="(prefers-color-scheme: dark)" srcset="${assetBase}/cards/${key}-dark.png"><img src="${assetBase}/cards/${key}-light.png" width="700" alt="${altText(o)}"></picture>`,
 		"",
 		...(action ? [action, ""] : []),
 		...(meta.length ? [`<sub>${meta.join(" · ")}</sub>`, ""] : []),
@@ -392,7 +392,7 @@ function selfTest() {
 	t("a refusal is a red alert", render(record(s, { stage: "merge", decision: "refuse", head: "a1", reason: "no flag contract" })).includes("> [!CAUTION]\n> **Merge refused: no flag contract.**"));
 	t("a hold picks the held card for both themes", heldBody.includes(`${ASSET_BASE}/cards/skipped-hold-pending-pending-dark.png`) && heldBody.includes(`${ASSET_BASE}/cards/skipped-hold-pending-pending-light.png`));
 	t("the title line shows the mascot in the state's mood and names the state", heldBody.includes(`<img src="${ASSET_BASE}/mascot/held.png" width="20" height="20" alt=""> **<a href="${README_URL}">Atelier</a>** · Held at Verify`));
-	t("the card spans the comment", heldBody.includes('width="100%"'));
+	t("the card shows at its design width, 700", heldBody.includes('width="700"'));
 	t("a failure names its reason under the card", render(record(s, { stage: "ready", decision: "failed", head: "a1", reason: "CI red" })).includes("**Verify failed: CI red.**"));
 	t("a proceed shows no box; Run details names the next stage", !render(s).includes("> [!") && render(s).includes("**Next:** Merge runs the merge gate"));
 	t("the title links Atelier to the skill's README and names the next step", render(s).includes(`**<a href="${README_URL}">Atelier</a>** · Verified, merge next`));
