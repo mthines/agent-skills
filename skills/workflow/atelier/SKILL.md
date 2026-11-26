@@ -65,6 +65,8 @@ The setup skills it calls ask the user questions, so it runs interactively only:
 | `ci-on-draft` | `MANUAL: ci-on-draft — <the workflows that skip drafts> — <the fix>` |
 | `flag-provider` with `release.yml` → `providers: []` | `DECIDED: flag-provider — …`: an answer, not missing setup; never delegated, never under `Needs you:` |
 | `merge.yml` → `protection: "<why>"` | `DECIDED: merge-protection — <why> …`: the repo's answer on a merge queue and required checks (a user-owned repo cannot have a queue; a required-checks rule can block the release job's own push); never a gap, never delegated, and never a reason to propose one |
+| the default branch requires no review | `DECIDED: merge — …`: atelier merges by itself once the gate passes; read from branch protection and rulesets, never delegated |
+| the default branch requires an approving review | `MANUAL: merge — …`: atelier holds the merge for a person; add an auto-approval check in `.agents/aw/merge.yml` to let it wait for one |
 
 ```text
 ✗ release.yml declares providers: [] → Skill("deployment-verify", "setup") on every /atelier setup   # it cannot invent a provider
@@ -341,7 +343,11 @@ approval:
   wait_for: ["Darkplane auto-approval"]   # regexes, case-insensitive, on check-run or status names; all must pass
   max_wait_minutes: 30                    # default for --max-wait
   start_grace_minutes: 5                  # how long a named check may take to show up
+manual_merge_paths: ["infra/**", "**/*.pem", ".github/workflows/"]   # globs; a PR changing any is never merged by atelier
 ```
+
+`manual_merge_paths` is checked first, before any review or approval: a PR whose changed files match (`**` crosses folders, `*` and `?` stay in one; a pattern with no `/` matches at any depth; a trailing `/` is a folder) ends `APPROVAL_WAIT: manual`, even with the review decision `APPROVED`, so a person merges it.
+`gh` lists at most the first 100 changed files of a PR.
 
 No `merge.yml` and no `--check` → a required review is a person's job at once (`manual`), with no wait; nothing about the repo is assumed.
 A named check that passes is not yet the review: the wait ends `approved` only when the review decision itself is `APPROVED` (a person's review counts too), because `prepare --merge` is refused until then.
@@ -373,6 +379,28 @@ Atelier never approves a PR itself and never asks a bot to; it only waits for th
 ✗ the named check already finished NEUTRAL → wait the full 30 minutes                 # it did not approve, and will not change
 ✓ gate passed → approval-wait (merge.yml names the check) → approved → prepare --merge
 ✓ gate passed → approval-wait (nothing named) → manual → Merge hold, "Needs you: review <pr>"
+```
+
+### When a person is needed
+
+Atelier merges on its own, and a person is needed only where one cannot be replaced:
+
+| Needed | Why | Where it shows |
+| --- | --- | --- |
+| The default branch requires an approving review and no `approval.wait_for` check gives it | atelier never approves a PR or bypasses the rule | `APPROVAL_WAIT: manual`, `MANUAL: merge` in setup |
+| The PR changes a `manual_merge_paths` glob in `.agents/aw/merge.yml` | the repo marked it as never auto-merged | `APPROVAL_WAIT: manual` |
+| A reviewer requested changes | a human's objection is not the agent review's to overrule | `APPROVAL_WAIT: manual` |
+| Build's `review-loop` ended `flagged`, `checks-red` or `NOT REVIEWED`, or `aw` skipped a companion | the agent review did not pass | Build `hold` |
+| The merge gate refused the contract, the proof or CI | the change is not shown to work | Ready/Merge `hold`, `failed` or `refuse` |
+| A `--max-wait` ended with CI or an approval check still pending | nothing to act on yet | `hold` with the `APPROVAL_WAIT: pending` line |
+
+Everything else proceeds without asking: a PR the gate passes, whose review converged, and whose repo requires no review merges at once.
+Never hold a merge for "a final look"; a hold names one row above and prints its `Needs you:`.
+`/atelier setup` reports which side of the first row a repo is on, so you know before a run.
+
+```text
+✗ gate passed, no review required, review converged → "ready to merge, shall I?"   # nothing in the table applies
+✓ gate passed, no review required, review converged → prepare --merge --single → merged
 ```
 
 ### After Build returns
