@@ -20,13 +20,16 @@ export const PHASES = Object.freeze(["deploy", "baseline", "step", "hold", "roll
 
 const warn = (msg) => process.stderr.write(`deployment-verify: ${msg}\n`);
 
-// The same export settings atelier uses, so a rollout lands in the dataset its run did: off wins, then ATELIER_OTLP_*, then PR_REVIEWER_OTLP_*.
+// The same export settings atelier uses, so a rollout lands in the dataset its run did: off wins, then ATELIER_OTLP_*,
+// then PR_REVIEWER_OTLP_*, then the host's OTEL_EXPORTER_OTLP_* only when ATELIER_TELEMETRY=on. Keep in step with atelier's telemetry.mjs exportTarget.
 export function exportTarget(env = process.env) {
-	if (String(env.ATELIER_TELEMETRY || "").toLowerCase() === "off") return { endpoint: "", headers: {} };
+	const mode = String(env.ATELIER_TELEMETRY || "").toLowerCase();
+	if (mode === "off") return { endpoint: "", headers: {} };
 	if (env.ATELIER_OTLP_ENDPOINT) return { endpoint: env.ATELIER_OTLP_ENDPOINT, headers: parseHeaders(env.ATELIER_OTLP_HEADERS) };
 	if (env.PR_REVIEWER_OTLP_ENDPOINT && String(env.PR_REVIEWER_TELEMETRY || "").toLowerCase() !== "off") {
 		return { endpoint: env.PR_REVIEWER_OTLP_ENDPOINT, headers: parseHeaders(env.PR_REVIEWER_OTLP_HEADERS) };
 	}
+	if (mode === "on" && env.OTEL_EXPORTER_OTLP_ENDPOINT) return { endpoint: env.OTEL_EXPORTER_OTLP_ENDPOINT, headers: parseHeaders(env.OTEL_EXPORTER_OTLP_HEADERS) };
 	return { endpoint: "", headers: {} };
 }
 
@@ -133,9 +136,10 @@ async function selfTest() {
 	t("a hold names the step it holds at", labels({ phase: "hold", hold: { at: 50 }, env: "production" }, { pr, slug: "a/b" })["deployment.step"] === "50");
 	t("deploy and done carry no step; done carries the outcome", labels(first, { pr })["deployment.step"] === null && labels({ phase: "done", outcome: "ROLLED_BACK" }, { pr })["deployment.outcome"] === "ROLLED_BACK");
 	t("a local rollout is smoke", labels({ phase: "step", step_value: 1, env: "local" }, { pr })["atelier.smoke"] === true);
-	t("export targets: off wins, ATELIER first, PR_REVIEWER reused, nothing else", exportTarget({ ATELIER_TELEMETRY: "off", ATELIER_OTLP_ENDPOINT: "x" }).endpoint === ""
+	t("export targets: off wins, ATELIER first, PR_REVIEWER reused, host OTEL only with ATELIER_TELEMETRY=on", exportTarget({ ATELIER_TELEMETRY: "off", ATELIER_OTLP_ENDPOINT: "x" }).endpoint === ""
 		&& exportTarget({ ATELIER_OTLP_ENDPOINT: "a", PR_REVIEWER_OTLP_ENDPOINT: "b" }).endpoint === "a" && exportTarget({ PR_REVIEWER_OTLP_ENDPOINT: "b" }).endpoint === "b"
-		&& exportTarget({ PR_REVIEWER_OTLP_ENDPOINT: "b", PR_REVIEWER_TELEMETRY: "off" }).endpoint === "" && exportTarget({ OTEL_EXPORTER_OTLP_ENDPOINT: "h" }).endpoint === "");
+		&& exportTarget({ PR_REVIEWER_OTLP_ENDPOINT: "b", PR_REVIEWER_TELEMETRY: "off" }).endpoint === "" && exportTarget({ OTEL_EXPORTER_OTLP_ENDPOINT: "h" }).endpoint === ""
+		&& exportTarget({ ATELIER_TELEMETRY: "on", OTEL_EXPORTER_OTLP_ENDPOINT: "h", OTEL_EXPORTER_OTLP_HEADERS: "k=v" }).headers.k === "v");
 	t("headers parse with percent-decoding", parseHeaders("Authorization=Bearer%20tok,Dash0-Dataset=default").Authorization === "Bearer tok");
 
 	const received = [];

@@ -25,8 +25,8 @@ Telemetry never decides: no tick reads it, and a failed export never changes an 
 
 ## Export
 
-Export is opt-in and uses atelier's settings, so a rollout lands in the dataset its run did: `ATELIER_TELEMETRY=off` wins, then `ATELIER_OTLP_ENDPOINT` (+ `_HEADERS`), then `PR_REVIEWER_OTLP_ENDPOINT` (+ `_HEADERS`).
-A host's own `OTEL_EXPORTER_OTLP_ENDPOINT` is never picked up.
+Export is opt-in and uses atelier's settings, so a rollout lands in the dataset its run did: `ATELIER_TELEMETRY=off` wins, then `ATELIER_OTLP_ENDPOINT` (+ `_HEADERS`), then `PR_REVIEWER_OTLP_ENDPOINT` (+ `_HEADERS`), then the host's `OTEL_EXPORTER_OTLP_ENDPOINT` (+ `_HEADERS`) only when `ATELIER_TELEMETRY=on`.
+A host's own `OTEL_EXPORTER_OTLP_ENDPOINT` is never picked up without `ATELIER_TELEMETRY=on`.
 A scheduled automation needs one of these set to export; without one the rollout still runs and reports on the PR.
 The encoder is pr-reviewer's `otlp.mjs`, found at `DEPLOYMENT_VERIFY_OTLP_MJS`, this checkout, the installed agent, or the Agent0 install.
 
