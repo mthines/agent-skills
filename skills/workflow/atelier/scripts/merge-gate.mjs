@@ -32,7 +32,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { isMain, makeTester, parseArgs, skillDir } from "./lib.mjs";
-import { repoHasCi } from "./preflight.mjs";
+import { repoHasCi, repoMatchesPr } from "./preflight.mjs";
 import { markGate } from "./telemetry.mjs";
 
 export const CONTRACT_DOC = "skills/testing/deployment-verify/rules/contract.md";
@@ -257,14 +257,15 @@ export function decideCi(ci, { noCi = false } = {}) {
 // `ci` is ci-ran.mjs's result for the head and `comments` the PR's comment bodies (newest first) the proof
 // half reads with the body; both `null` only for the contract-only early gate. Halves decide in order: contract, CI, proof.
 // `early`: the contract and the report's shape after Build; no CI, no --proven.
-export async function gate({ files, body, surfaceJson, surfaceFile, repoDir = process.cwd(), ci = null, comments = null, early = false }) {
+export async function gate({ files, body, surfaceJson, surfaceFile, repoDir = process.cwd(), ci = null, comments = null, early = false, noCiRepoKnown = true }) {
 	if (!surfaceJson && !surfaceFile) surfaceJson = await repoSurface(repoDir);
 	const ui = userVisible(files, { surfaceJson, surfaceFile });
 	const contract = await flagContract(body, repoDir);
 	const hosted = await hostedRepo(repoDir);
 	let d = decide({ isUI: ui.isUI, contract, hosted, optOut: optOut(body) });
 	let refusedBy = d.decision === "refuse" ? "contract" : null;
-	const noCi = !!ci && isNoCiEvidence(ci) && !repoHasCi(repoDir);
+	// noCiRepoKnown: repoDir is the PR's repo (the CLI checks origin under --pr). Unknown → no-CI never passes.
+	const noCi = !!ci && noCiRepoKnown && isNoCiEvidence(ci) && !repoHasCi(repoDir);
 	const ciRefusal = d.decision === "pass" && ci ? decideCi(ci, { noCi }) : null;
 	if (ciRefusal) [d, refusedBy] = [ciRefusal, "ci"];
 	else if (noCi && d.decision === "pass") d = { ...d, reason: `${d.reason}; ${NO_CI_NOTE}` };
@@ -431,6 +432,8 @@ async function selfTest() {
 	writeFileSync(join(withCi, ".github", "workflows", "ci.yml"), "on:\n  pull_request:\njobs: {}\n");
 	r = await gate({ files: ["docs/guide.md"], body: PROOF_BODY, repoDir: withCi, ci: noChecks, comments: [] });
 	t("✗ no checks reported in a repo that has a CI workflow still refuses on ci", r.refused_by === "ci" && !r.ci.no_ci, JSON.stringify(r));
+	r = await gate({ files: ["docs/guide.md"], body: PROOF_BODY, repoDir: empty, ci: noChecks, comments: [], noCiRepoKnown: false });
+	t("✗ a directory not known to be the PR's repo never passes no CI (fails closed)", r.refused_by === "ci" && !r.ci.no_ci, JSON.stringify(r));
 	r = await gate({ files: ["docs/guide.md"], body: PROOF_BODY, repoDir: empty, ci: { ...noChecks, reason: "CI not run at abc1234: every required check skipped (4)" }, comments: [] });
 	t("✗ skipped checks are never read as no CI", r.refused_by === "ci", JSON.stringify(r));
 	rmSync(withCi, { recursive: true, force: true });
@@ -485,7 +488,10 @@ async function main() {
 			else if (!contractOnly && !early) throw new Error("offline mode needs --rollup-file <json> (ci-ran.mjs's query), --early, or --contract-only");
 			if (typeof a["comments-file"] === "string") comments = JSON.parse(readFileSync(a["comments-file"], "utf8"));
 		} else throw new Error("pass --pr <n>, or --files <list> --body-file <path>");
-		const r = await gate({ files, body, surfaceJson: a["surface-json"], surfaceFile: a["surface-file"], repoDir: a["repo-dir"] || process.cwd(), ci: early ? null : ci, comments: contractOnly ? null : comments, early });
+		const repoDir = a["repo-dir"] || process.cwd();
+		// No CI is read from the repo, so the repo must be the PR's: under --pr its origin must match; offline, only a named --repo-dir counts.
+		const noCiRepoKnown = a.pr ? repoMatchesPr(repoDir, String(a.pr)) : typeof a["repo-dir"] === "string";
+		const r = await gate({ files, body, surfaceJson: a["surface-json"], surfaceFile: a["surface-file"], repoDir, ci: early ? null : ci, comments: contractOnly ? null : comments, early, noCiRepoKnown });
 		console.log(JSON.stringify(r, null, 2));
 		if (r.how) console.log(r.how);
 		if (r.warning) console.log(`warning: ${r.warning}`);

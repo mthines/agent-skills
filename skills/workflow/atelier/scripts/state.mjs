@@ -42,7 +42,7 @@ import { join } from "node:path";
 import { ENDINGS, STAGE_TITLE, altText, cardKey, outcomeOf, outcomes, verdict } from "./card.mjs";
 import { companionDecision, isMain, makeTester, parseArgs, parseDegraded, requiredCompanions } from "./lib.mjs";
 import { isNoCiEvidence } from "./merge-gate.mjs";
-import { repoHasCi } from "./preflight.mjs";
+import { repoHasCi, repoMatchesPr } from "./preflight.mjs";
 import { markCheckpoint, markCompanions, markDecision, markNext, parseMemory, resolveRunDir } from "./telemetry.mjs";
 
 export const MARKER = "<!-- atelier:v1 -->";
@@ -487,6 +487,7 @@ async function main() {
 			console.log(`CHECKPOINT: ${a.step} done at ${String(a.head).slice(0, 7)}`);
 			await markCheckpoint({ step: a.step, pr: a.pr });
 		} else if (a["resume-step"]) {
+			if (typeof a.head !== "string" || !a.head) throw new Error("--resume-step needs --head (sentinel and early-gate hold only for the head they ran on)");
 			const list = readChecklist(checklistPath(a.pr));
 			const step = resumeStep(list, a.head);
 			if (typeof a["aw-out"] === "string" && list?.steps?.companions?.aw) writeFileSync(a["aw-out"], list.steps.companions.aw, "utf8");
@@ -508,7 +509,9 @@ async function main() {
 		else if (a.record) {
 			const ci = typeof a["ci-file"] === "string" ? JSON.parse(readFileSync(a["ci-file"], "utf8").replace(/\n?CI: .*\s*$/, "")) : null;
 			// --no-ci is a claim about the repo, so the script checks it rather than taking the flag's word.
-			if (a["no-ci"] && repoHasCi(typeof a["repo-dir"] === "string" ? a["repo-dir"] : process.cwd())) throw new Error("--no-ci: this repo has a workflow that runs on pull_request or push, so no checks reported is not \"no CI\"");
+			const ciDir = typeof a["repo-dir"] === "string" ? a["repo-dir"] : process.cwd();
+			if (a["no-ci"] && a.pr && !repoMatchesPr(ciDir, String(a.pr))) throw new Error(`--no-ci: ${ciDir} is not a clone of the PR's repository (origin differs), so it cannot say the repo has no CI; run from the clone or pass --repo-dir`);
+			if (a["no-ci"] && repoHasCi(ciDir)) throw new Error("--no-ci: this repo has a workflow that runs on pull_request or push, so no checks reported is not \"no CI\"");
 			const s = record(parse(readBody(a)), { stage: a.stage, decision: a.decision, head: a.head, reason: a.reason === true ? "" : a.reason || "", pr: a.pr, ci, preflight: typeof a.preflight === "string" ? a.preflight : null, noCi: !!a["no-ci"] });
 			process.stdout.write(`${render(s)}\n`);
 			// Deliver is display-only in the state; its telemetry is the bus event rules/deliver.md names.

@@ -281,7 +281,7 @@ When preflight's `ci` row is a gap and `ci-ran.mjs` prints `CI: not-run — CI n
 node "$S" --record --stage ready --decision proceed --head "$SHA" --ci-file ci.json --no-ci --reason "no CI in this repo" --pr <pr-url> --body-file state.md > next.md
 ```
 
-`state.mjs` checks the claim itself: `--no-ci` exits 2 when the repo (cwd, or `--repo-dir`) has a workflow on pull_request or push, and it never turns skipped checks into evidence.
+`state.mjs` checks the claim itself: `--no-ci` exits 2 when the repo (cwd, or `--repo-dir`) has a workflow on pull_request or push, or is not a clone of the PR's repo, and it never turns skipped checks into evidence.
 The merge gate applies the same rule on its own, so the proof half still decides the merge.
 
 ```text

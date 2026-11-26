@@ -16,6 +16,7 @@
 // Whether the telemetry MCP tool answers is the agent's check, not this script's: it cannot call a tool.
 // It never blocks: exit 0 with any number of gaps, 2 on an error.
 
+import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -99,11 +100,34 @@ export function ciDraftCheck(workflows) {
 
 // Does any workflow run CI on a PR's commits? A trigger on pull_request(_target), push, or merge_group counts;
 // a repo with none (a Homebrew tap, a docs repo) reports no checks on every PR, and that is not a CI failure.
-export const CI_TRIGGER = /^\s*(on:|"on":|'on':)[\s\S]*\b(pull_request(_target)?|push|merge_group)\b/m;
+export const CI_EVENTS = new Set(["pull_request", "pull_request_target", "push", "merge_group"]);
+
+// The events a workflow's top-level `on:` names: inline (`on: push`, `on: [push, pull_request]`, `on: {push: …}`)
+// or as the block's first-level keys. Never the rest of the file, where a step's `git push` or a
+// `docker/build-push-action` would read as a trigger.
+export function workflowTriggers(text) {
+	const lines = String(text).split(/\r?\n/);
+	const at = lines.findIndex((l) => /^(on|"on"|'on')\s*:/.test(l));
+	if (at < 0) return [];
+	const inline = lines[at].replace(/^(on|"on"|'on')\s*:/, "").replace(/#.*$/, "").trim();
+	const words = (t) => t.replace(/^-\s*/, "").replace(/\s*:.*$/, "").replace(/^["']|["']$/g, "");
+	if (inline) {
+		const top = inline.startsWith("{") ? inline.slice(1).replace(/\{[^{}]*\}|\[[^[\]]*\]/g, "") : inline;
+		return top.replace(/[[\]{}]/g, " ").split(/,/).map((w) => words(w.trim())).filter(Boolean);
+	}
+	const block = [];
+	for (const l of lines.slice(at + 1)) {
+		if (/^\S/.test(l)) break;
+		if (l.trim() && !l.trim().startsWith("#")) block.push(l);
+	}
+	if (!block.length) return [];
+	const indent = Math.min(...block.map((l) => l.match(/^\s*/)[0].length));
+	return block.filter((l) => l.match(/^\s*/)[0].length === indent).map((l) => words(l.trim()));
+}
 
 export function ciCheck(workflows) {
 	const name = "ci";
-	const ci = workflows.filter((w) => CI_TRIGGER.test(w.text)).map((w) => w.file);
+	const ci = workflows.filter((w) => workflowTriggers(w.text).some((e) => CI_EVENTS.has(e))).map((w) => w.file);
 	if (ci.length) return { name, ok: true, value: `yes (${ci.length} workflow${ci.length === 1 ? "" : "s"} on pull_request or push)`, cannot: "" };
 	return { name, ok: false, value: "none (no workflow runs on pull_request or push)", cannot: "CI evidence: Ready and the merge gate take \"no checks reported\" as no CI instead of holding" };
 }
@@ -119,6 +143,20 @@ export function readWorkflows(repo) {
 
 /** True when the repo at `repo` has a workflow that runs CI on a PR; state.mjs and merge-gate.mjs read it before taking "no checks reported" as no CI. */
 export const repoHasCi = (repo) => ciCheck(readWorkflows(repo)).ok;
+
+// Is `dir` a clone of the PR's repository? A no-CI verdict read from any other directory says nothing about the PR's repo.
+export function repoMatchesPr(dir, prUrl) {
+	const pr = String(prUrl ?? "").match(/github\.com\/([^/\s]+)\/([^/\s]+)\/pull\//);
+	if (!pr) return false;
+	let origin = "";
+	try {
+		origin = execFileSync("git", ["-C", dir, "remote", "get-url", "origin"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+	} catch {
+		return false;
+	}
+	const o = origin.match(/github\.com[:/]([^/\s]+)\/([^/\s]+?)(\.git)?\/?$/);
+	return !!o && o[1].toLowerCase() === pr[1].toLowerCase() && o[2].toLowerCase() === pr[2].toLowerCase();
+}
 
 // `.agents/aw/preflight.yml` → `accept: { <check>: "<why the repo lives without it>" }`. Only a known check with a
 // non-empty reason is accepted; anything else is ignored, so a typo never hides a gap.
@@ -395,6 +433,14 @@ async function selfTest() {
 	}
 	t("✓ a pull_request or push workflow is CI", ciCheck([{ file: "ci.yml", text: wf("  pull_request:") }]).ok && ciCheck([{ file: "b.yml", text: "on: [push]\njobs: {}\n" }]).ok);
 	const noCi = ciCheck([{ file: "release.yml", text: "on:\n  workflow_dispatch:\njobs: {}\n" }]);
+	const release = "on:\n  workflow_dispatch:\njobs:\n  r:\n    steps:\n      - run: git push origin HEAD\n      - uses: docker/build-push-action@v5\n";
+	t("✗ a manual workflow whose steps git push or build-push is not CI", !ciCheck([{ file: "release.yml", text: release }]).ok);
+	t("✓ on: {push: …} inline and a quoted 'on' are CI; workflow_dispatch inline is not", ciCheck([{ file: "a.yml", text: "on: {push: {branches: [main]}}\n" }]).ok && ciCheck([{ file: "b.yml", text: '"on":\n  pull_request:\n' }]).ok && !ciCheck([{ file: "c.yml", text: "on: workflow_dispatch\n" }]).ok);
+	const clone = mkdtempSync(join(tmpdir(), "pf-origin-"));
+	execFileSync("git", ["init", "-q", clone]);
+	execFileSync("git", ["-C", clone, "remote", "add", "origin", "git@github.com:Acme/Tap.git"]);
+	t("repoMatchesPr: the clone's origin is the PR's repo (ssh, any case); another repo or no git is not", repoMatchesPr(clone, "https://github.com/acme/tap/pull/3") && !repoMatchesPr(clone, "https://github.com/acme/web/pull/3") && !repoMatchesPr(tmpdir(), "https://github.com/acme/tap/pull/3"));
+	rmSync(clone, { recursive: true, force: true });
 	t("✗ no workflow, or only a manual one, is a ci gap that says no checks is not a failure", !ciCheck([]).ok && !noCi.ok && /no checks reported/.test(noCi.cannot), noCi.value);
 	const acc = acceptedGaps({ accept: { "flag-provider": "no flag system; a human flips flags", "sign-in": "  ", telemtry: "typo", ci: 3 } });
 	t("accept: only a known check with a non-empty reason counts", JSON.stringify(Object.keys(acc)) === '["flag-provider"]', JSON.stringify(acc));

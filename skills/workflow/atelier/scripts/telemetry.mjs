@@ -597,8 +597,9 @@ export function lastEvent(records, last) {
 
 // Did the next run pick up the same work? The same PR, else the same ticket, else the same repo and branch.
 export function sameWork(a = {}, b = {}) {
-	if (a.pr_url || b.pr_url) return !!a.pr_url && a.pr_url === b.pr_url;
-	if (a.ticket_id || b.ticket_id) return !!a.ticket_id && a.ticket_id === b.ticket_id;
+	// Compare the strongest key both runs carry: a run that opened a PR and a re-run from the ticket are the same work.
+	if (a.pr_url && b.pr_url) return a.pr_url === b.pr_url;
+	if (a.ticket_id && b.ticket_id) return a.ticket_id === b.ticket_id;
 	return !!a.repo && !!a.branch && a.repo === b.repo && a.branch === b.branch;
 }
 
@@ -1138,7 +1139,8 @@ async function selfTest() {
 			rec({ t: "finish", outcome: "abandoned", reason: "superseded: a later run began" }, 6)]);
 		t("✗ a short abandoned run that recorded a decision is not a duplicate", decided.duplicate === false);
 		t("same work: the PR, else the ticket, else repo and branch", sameWork({ pr_url: pr }, { pr_url: pr }) && !sameWork({ pr_url: pr }, { repo: "acme/web" })
-			&& sameWork({ ticket_id: "AI-1" }, { ticket_id: "AI-1" }) && !sameWork({ repo: "a/b", branch: "x" }, { repo: "a/b", branch: "y" }) && !sameWork({}, {}));
+			&& sameWork({ ticket_id: "AI-1" }, { ticket_id: "AI-1" }) && !sameWork({ repo: "a/b", branch: "x" }, { repo: "a/b", branch: "y" }) && !sameWork({}, {})
+			&& sameWork({ pr_url: pr, ticket_id: "AI-1" }, { ticket_id: "AI-1" }) && !sameWork({ pr_url: pr, ticket_id: "AI-1" }, { ticket_id: "AI-2" }));
 		t("the last event names a checklist step or a decision", lastEvent([{ t: "stage", name: "companions" }], { t: "attr", attrs: { "checklist.step": "sentinel" } }) === "stage companions · checklist sentinel"
 			&& lastEvent([], { t: "decision", stage: "build", decision: "hold" }) === "decision build hold");
 		t("finish on an empty dir is a quiet no-op", dead.exported === false);
