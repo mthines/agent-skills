@@ -19,6 +19,9 @@ The preflight line is stored at the top level of the state by the first `--recor
 A Build `hold` for companions that did not run carries reason `skipped: <names>`, which `state.mjs --companions` prints.
 A Ready `proceed` recorded with `--no-ci` stores `ci.no_ci: true` on `no checks reported` evidence; `--record` exits 2 when the repo (cwd, or `--repo-dir`) has a workflow on pull_request or push, or, with `--pr`, when that directory's `origin` is not the PR's repo, and `--next` accepts the entry as Ready evidence only with that flag.
 
+A stage entry written with `--backfill` carries `backfilled: true`: Run details shows it as *reconstructed after the fact*, telemetry skips it, and `merge-gate.mjs` does not count a backfilled Ready as the live record (SKILL.md, *Recording after the fact*).
+`merge-gate.mjs --pr` reads the PR's atelier comment and refuses (`refused_by: state`) unless its Ready entry is a live `proceed` on the head the gate judges; offline modes skip that check.
+
 ```text
 ✗ node state.mjs --record --stage build --decision proceed --reason "Degraded: review-loop skipped"   # an unreviewed PR walks on
 ✓ node state.mjs --companions --aw-file aw.txt   # COMPANIONS: hold — skipped: review-loop → record Build hold with that reason

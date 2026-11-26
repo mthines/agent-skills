@@ -254,10 +254,26 @@ export function decideCi(ci, { noCi = false } = {}) {
 	return { decision: "refuse", reason, how };
 }
 
+const STATE_RE = /<!-- atelier:v1:state (\{.*?\}) -->/s;
+const STATE_HOW = "Record Ready before the merge: node state.mjs --record --stage ready --decision proceed --head <sha> --ci-file ci.json --pr <url> > next.md, then --upsert it (SKILL.md, Stages step 1). A reconstructed (--backfill) entry is for after the merge and does not count here.";
+
+// The atelier comment's Ready entry must be a live `proceed` on `head`. null when it is.
+export function readyRecordProblem(comments, head) {
+	const m = comments.map((b) => (b.startsWith("<!-- atelier:v1 -->") ? b.match(STATE_RE) : null)).find(Boolean);
+	if (!m) return "no atelier state comment on the PR: Build and Ready were never recorded";
+	let ready;
+	try { ready = JSON.parse(m[1])?.stages?.ready; } catch { return "the atelier state comment is unreadable"; }
+	if (!ready || ready.decision !== "proceed") return "Ready is not recorded proceed on the PR's atelier comment";
+	if (ready.backfilled) return "Ready was recorded after the fact (backfill), not live";
+	const at = String(head || "");
+	if (!ready.sha || !at || !(ready.sha === at || (Math.min(ready.sha.length, at.length) >= 7 && (ready.sha.startsWith(at) || at.startsWith(ready.sha))))) return `Ready was recorded on ${String(ready.sha || "?").slice(0, 7)}, not on the current head ${at.slice(0, 7)}`;
+	return null;
+}
+
 // `ci` is ci-ran.mjs's result for the head and `comments` the PR's comment bodies (newest first) the proof
 // half reads with the body; both `null` only for the contract-only early gate. Halves decide in order: contract, CI, proof.
 // `early`: the contract and the report's shape after Build; no CI, no --proven.
-export async function gate({ files, body, surfaceJson, surfaceFile, repoDir = process.cwd(), ci = null, comments = null, early = false, noCiRepoKnown = true }) {
+export async function gate({ files, body, surfaceJson, surfaceFile, repoDir = process.cwd(), ci = null, comments = null, early = false, noCiRepoKnown = true, requireState = false }) {
 	if (!surfaceJson && !surfaceFile) surfaceJson = await repoSurface(repoDir);
 	const ui = userVisible(files, { surfaceJson, surfaceFile });
 	const contract = await flagContract(body, repoDir);
@@ -274,6 +290,9 @@ export async function gate({ files, body, surfaceJson, surfaceFile, repoDir = pr
 	const proofRefusal = d.decision === "pass" && proof ? decideProof(proof, { ui: ui.isUI, early }) : null;
 	if (proofRefusal) [d, refusedBy] = [proofRefusal, "proof"];
 	else if (proof && d.decision === "pass") d = { ...d, reason: `${d.reason}; ${early ? "verify report present (proven at Ready)" : "every criterion proven (verify report complete)"}` };
+	// The run's record: Ready `proceed` on this head, written live. A run that merges without one leaves the PR no history.
+	const stateProblem = requireState && !early && comments && ci && d.decision === "pass" ? readyRecordProblem(comments, ci.head) : null;
+	if (stateProblem) [d, refusedBy] = [{ decision: "refuse", reason: stateProblem, how: STATE_HOW }, "state"];
 	const skipped = early ? "not checked (--early)" : "not checked (--contract-only)";
 	const ciOut = ci ? { state: ci.state, head: ci.head, reason: noCi ? `${ci.reason}; ${NO_CI_NOTE}` : ci.reason, ...(noCi ? { no_ci: true } : {}) } : skipped;
 	const proofOut = proof ? (proof.length ? proof : "report complete") : skipped;
@@ -403,6 +422,16 @@ async function selfTest() {
 	t("green CI with no verify report refuses on proof", r.decision === "refuse" && r.refused_by === "proof" && /no intent region/.test(r.reason) && /\/aw-verify run checks/.test(r.how), JSON.stringify(r));
 	r = await gate({ files: ["docs/guide.md"], body: PROOF_BODY, repoDir: empty, ci: greenCi, comments: [] });
 	t("green CI with a complete checks-only report passes", r.decision === "pass" && r.refused_by === null && r.proof === "report complete" && /every criterion proven/.test(r.reason), JSON.stringify(r));
+	const stateOf = (sha, extra = {}) => `<!-- atelier:v1 -->\n<!-- atelier:v1:state ${JSON.stringify({ v: 1, stages: { ready: { decision: "proceed", sha, ...extra } } })} -->`;
+	const withState = (c) => gate({ files: ["docs/guide.md"], body: PROOF_BODY, repoDir: empty, ci: greenCi, comments: c, requireState: true });
+	r = await withState([]);
+	t("a PR with no atelier comment is refused by the state half", r.refused_by === "state" && /never recorded/.test(r.reason), JSON.stringify(r));
+	r = await withState([stateOf(greenCi.head, { backfilled: true })]);
+	t("a backfilled Ready is not a live record", r.refused_by === "state" && /after the fact/.test(r.reason), JSON.stringify(r));
+	r = await withState([stateOf("zzzzzzz")]);
+	t("a Ready recorded on another head is refused", r.refused_by === "state" && /not on the current head/.test(r.reason), JSON.stringify(r));
+	r = await withState([stateOf(greenCi.head)]);
+	t("a live Ready on this head passes the state half", r.decision === "pass", JSON.stringify(r));
 	r = await gate({ files: ["docs/guide.md"], body: "see the comment", repoDir: empty, ci: greenCi, comments: ["unrelated", PROOF_BODY.slice(PROOF_BODY.indexOf("<!-- verify:report -->"))] });
 	t("a verify report in a comment counts", r.decision === "pass", JSON.stringify(r));
 	r = await gate({ files: ["docs/guide.md"], body: PROOF_BODY, repoDir: empty, ci: { ...greenCi, head: "deadbeef00" }, comments: [] });
@@ -491,7 +520,7 @@ async function main() {
 		const repoDir = a["repo-dir"] || process.cwd();
 		// No CI is read from the repo, so the repo must be the PR's: under --pr its origin must match; offline, only a named --repo-dir counts.
 		const noCiRepoKnown = a.pr ? repoMatchesPr(repoDir, String(a.pr)) : typeof a["repo-dir"] === "string";
-		const r = await gate({ files, body, surfaceJson: a["surface-json"], surfaceFile: a["surface-file"], repoDir, ci: early ? null : ci, comments: contractOnly ? null : comments, early, noCiRepoKnown });
+		const r = await gate({ files, body, surfaceJson: a["surface-json"], surfaceFile: a["surface-file"], repoDir, ci: early ? null : ci, comments: contractOnly ? null : comments, early, noCiRepoKnown, requireState: !!a.pr });
 		console.log(JSON.stringify(r, null, 2));
 		if (r.how) console.log(r.how);
 		if (r.warning) console.log(`warning: ${r.warning}`);
