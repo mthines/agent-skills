@@ -33,6 +33,7 @@ An app can be gated by two independent walls; clear whichever are present.
 | `bypass-header` | Outer wall only | `bypass_header: { name, env }` |
 | `storage-state` | Inner wall (add `bypass_header` for both walls) | `storage_state`, `authed_check`, `refresh: { when, env, command, timeout_seconds }`, `identity` |
 | `manual` | Hardware MFA, mandatory CAPTCHA, SSO with no test mode | — ; `aw-tester` marks authed specs `skipped (auth.strategy: manual)` |
+| `bearer` | An API called with a token, under `identities.<role>` only (a `deployment-verify` probe) | `token: { env }` or `token: { command, ttl_seconds }`, `header` (default `Authorization`), `check` — specified by the `deployment-verify` skill's `rules/probes.md` |
 
 ```yaml
 # ✓ Both walls on a preview — names env vars, holds no value

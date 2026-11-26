@@ -266,7 +266,8 @@ export function planCriteria(planMd) {
   const acs = sectionOf(planMd, "Acceptance Criteria").map((l) => PLAN_AC.exec(l.trim())).filter(Boolean).map(([, id, tag, target = "", raw]) => {
     // A `(covers: …)` group may sit before or after `telemetry:` in the text; it is never the target, nor criterion text.
     const text = raw.replace(/\s*\(covers:[^)]*\)/g, "").trim();
-    const tele = /^telemetry:\s*(\S+)/.exec(text);
+    // A backticked target is one phrase, spaces and all (`CALL lorekit_x`); a bare one ends at the first space.
+    const tele = /^telemetry:\s*(`[^`]+`|\S+)/.exec(text);
     return { id, kind: tag || (tele ? "telemetry" : "check"), target: tag ? target : tele ? tele[1] : "", text };
   });
   const guardrails = sectionOf(planMd, "Guardrails").map((l) => /^- (.+)$/.exec(l.trim())).filter(Boolean).map((m) => m[1]);
@@ -1028,6 +1029,9 @@ function selfTest() {
   assert(fpc[0].status === "✅" && fpc[1].status === "❌" && fpc[2].status === "⬜" && fpc[3].status === "⬜" && fpc[5].kind === "guardrail", "run-checks statuses become marks; others start ⬜; an unknown id is ignored");
   assert(fpc[6].text.includes("weaken a test | skip one") && fpc[1].target === "PUT /api/x" && fpc[3].target === "checkout.submit", "a pipe in a cell survives, and targets reach the Proof cell");
   assert(fp.includes("5 criteria · 1 ✅ · 1 ❌ · 3 ⬜ · 2 guardrails") && intentFrom(splice("", "intent", fp)).length === 7 && intentFromPlan(plan) === intentFromPlan(plan), "the summary counts the marks, splice accepts the region, and rendering is stable");
+  const spaced = planCriteria("## Acceptance Criteria\n\n- [ ] AC-10 — telemetry: `CALL lorekit_record_memory_reads` CLIENT span is a child of the read span.\n").acs[0];
+  assert(spaced.kind === "telemetry" && spaced.target === "`CALL lorekit_record_memory_reads`", `a backticked telemetry target keeps its spaces: ${spaced.target}`);
+  console.log("ok   a backticked telemetry target keeps the whole phrase");
   const covers = planCriteria("## Acceptance Criteria\n\n- [ ] AC-4 — telemetry: (covers: R3) checkout.submit span with order.id\n- [ ] AC-5 — (covers: R3) telemetry: checkout.pay span\n- [ ] AC-6 (covers: R3) telemetry: checkout.done span\n").acs;
   assert(covers.map((c) => `${c.kind}:${c.target}`).join() === "telemetry:checkout.submit,telemetry:checkout.pay,telemetry:checkout.done", `a (covers: …) group on either side of telemetry: never becomes the target: ${covers.map((c) => `${c.kind}:${c.target}`)}`);
   assert(covers.map((c) => c.text).join("|") === "telemetry: checkout.submit span with order.id|telemetry: checkout.pay span|telemetry: checkout.done span", `a (covers: …) group never reaches the Criterion text, in either order: ${covers.map((c) => c.text).join("|")}`);

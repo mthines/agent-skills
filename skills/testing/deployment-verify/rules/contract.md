@@ -103,7 +103,7 @@ Take the first row that fails; print its line and stop without touching the flag
 
 A change with no flag has no cohorts; omit `flag` and `cohort`.
 The contract is measured before and after the deploy ([`loop.md`](./loop.md#no-flag--before-and-after)): one step at 100 % with `baseline` as the reference, and a rollback through `release.yml` → `rollback` instead of the flag.
-Say so in the report: `no flag — before/after only, attribution weaker`.
+Say so in the report: `no flag — before/after only, attribution weaker`; with probes, `no flag — synthetic probes, judged per route` ([`probes.md`](./probes.md)).
 
 ```json
 // ✗ Wrong — a no-flag contract that invents a flag to satisfy the cohort check

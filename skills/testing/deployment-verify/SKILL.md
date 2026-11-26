@@ -13,7 +13,7 @@ argument-hint: '[run|tick|approve|override|setup] [<pr-url|pr-number>|--all] [--
 license: MIT
 metadata:
   author: mthines
-  version: '0.4.0'
+  version: '0.5.0'
   workflow_type: orchestrator
   tags: [deployment, rollout, feature-flags, rollback, telemetry, verification, production, automation, notify]
 ---
@@ -68,12 +68,13 @@ node ${CLAUDE_SKILL_DIR}/scripts/tick.mjs --local <state.json> --contract <contr
 
 `tick` = one pass, then exit; `--run` = keep ticking until the outcome is terminal.
 Never re-implement a step the controller performs; read its stderr and the report it writes.
+In PR mode it prints one status line per PR on stdout (`deployment-verify #<n>: <status> — <detail>`); the report itself lives in the PR comment.
 It implements these rules, which stay its specification:
 
 | Phase | Rule |
 | --- | --- |
 | `deploy` | Wait for the merged commit to serve — [`rules/config.md § Deploy detection`](./rules/config.md#deploy-detection) |
-| `baseline`, `step` | Measure, confirm live, `decide.mjs`, act — [`rules/loop.md`](./rules/loop.md), queries per [`rules/telemetry.md`](./rules/telemetry.md) |
+| `baseline`, `step` | Measure, confirm live, `decide.mjs`, act — [`rules/loop.md`](./rules/loop.md), queries per [`rules/telemetry.md`](./rules/telemetry.md); a no-flag change with a `probes.yml` sends the same requests before and after, judged per route — [`rules/probes.md`](./rules/probes.md) |
 | `hold` | Wait for a human at `hold_after`; print the recommendation — [`rules/hold.md`](./rules/hold.md), [`rules/autonomy.md`](./rules/autonomy.md) |
 | `rollback` | Reverse, prove recovery, hand off the cause — [`rules/rollback.md`](./rules/rollback.md) |
 
@@ -101,6 +102,7 @@ criteria: <n> on the PR, <g> guardrails (aw-verify's `intent` region)
   AC-2 api PUT /api/x — watched        # root span in the contract; not watched = nothing here reads it
 deploy:   live at <time> (<attribute>=<sha7>)
 baseline: <n> requests, <e> errors, <avg> ms
+probe:    before live at <time> · after <version> at <time>     # only with probes.yml (rules/probes.md), one row per route below
 step   test n/err/ms    control n/err/ms   verdict
 1 %    26/7/304         2593/0/3.6         ROLLBACK error rate +26.9pp vs control > 5pp
 hold:     10 % since <time> — waiting: /deployment-verify approve|override <n>     # only with hold_after
@@ -126,5 +128,6 @@ not watched: <e.g. no soak window — run ended at <time>>
 | Report RECOVERED without a clean post-rollback window | Measure one more window |
 | Sleep through a rollout inside one automation run | Tick and exit; the schedule brings the next tick |
 | Ask a question in an unattended run | Apply the automation answer |
+| Count a probe's 401 or 403 as errors | `STOPPED — probe auth failed`; refresh the identity, start again ([`rules/probes.md`](./rules/probes.md#auth--a-bearer-identity)) |
 | Advance a hold because the recommendation says `AUTO` | Wait for a human `approve`; the recommendation is advisory |
 | Drop a failed notification | Record it in the PR comment |

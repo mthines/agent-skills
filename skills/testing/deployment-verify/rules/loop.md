@@ -69,6 +69,8 @@ With no `flag` there is no set, no control, and one step at 100 %.
 3. **Decide.** [`decide.mjs`](../scripts/decide.mjs) compares `test` with `baseline`. A ROLLBACK verdict runs `release.yml` → `rollback` `kind: platform`, else ends `ESCALATE — rollback needs a human`.
 
 With `manual` detection there is no attribute, so both windows are time-only.
+
+With a committed `probes.yml` covering a contract root span, both sides are probes instead of real traffic, and each route is judged on its own ([`probes.md`](./probes.md)).
 **Why:** filtering by version keeps pods still rolling from diluting the after side, and a late tick from leaking the new version into the before side.
 
 ```text
