@@ -17,6 +17,14 @@
 // A --pr on --next or --companions (a URL, or a number resolved against the run's repo) sets the run's PR facts.
 //   node state.mjs --companions --aw-file <f> [--accept-skip a,b]
 //                                                          prints `COMPANIONS: proceed|hold — <reason>` for aw's hand-back
+//   node state.mjs --checkpoint --pr <url> --step <companions|sentinel|early-gate> --head <sha> [--aw-file <f>] [--result "<line>"]
+//                                                          marks one after-Build checklist step done (companions stores aw's hand-back)
+//   node state.mjs --resume-step --pr <url> --head <sha> [--aw-out <f>]
+//                                                          prints `RESUME: none|companions|sentinel|early-gate|record`, the first
+//                                                          step not done (sentinel and early-gate count only on --head); --aw-out
+//                                                          writes the stored hand-back. Checkpoints live beside the telemetry ledger.
+//   --record … --no-ci                                     Ready `proceed` on ci-ran's "no checks reported" in a repo with no
+//                                                          CI workflow (preflight.mjs repoHasCi on cwd or --repo-dir); refused otherwise
 //   node state.mjs --parse  [--body-file <f>]               prints the state JSON, or null
 //   node state.mjs --fetch  --pr <url|n>                    prints the existing comment body via gh (empty when none)
 //   node state.mjs --upsert --pr <url|n> --body-file <f>    edits the sticky comment in place, or creates it (gh)
@@ -27,11 +35,15 @@
 // Exit: 0 ok, 2 error.
 
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { ENDINGS, STAGE_TITLE, altText, cardKey, outcomeOf, outcomes, verdict } from "./card.mjs";
 import { companionDecision, isMain, makeTester, parseArgs, parseDegraded, requiredCompanions } from "./lib.mjs";
-import { markCompanions, markDecision, markNext, parseMemory } from "./telemetry.mjs";
+import { isNoCiEvidence } from "./merge-gate.mjs";
+import { repoHasCi } from "./preflight.mjs";
+import { markCheckpoint, markCompanions, markDecision, markNext, parseMemory, resolveRunDir } from "./telemetry.mjs";
 
 export const MARKER = "<!-- atelier:v1 -->";
 const STATE_RE = /<!-- atelier:v1:state (\{.*?\}) -->/s;
@@ -62,7 +74,11 @@ export const sameSha = (a, b) => !!a && !!b && (a === b || (Math.min(a.length, b
 
 export function readyEvidenceOk(entry, head) {
 	const ci = entry?.ci;
-	if (!ci || ci.state !== "green" || ci.ran !== true || !ci.head) return false;
+	if (!ci || !ci.head) return false;
+	// No CI in the repo: `--record --no-ci` stored ci-ran's "no checks reported" after checking the repo has no CI workflow.
+	const green = ci.state === "green" && ci.ran === true;
+	const noCi = ci.no_ci === true && isNoCiEvidence(ci);
+	if (!green && !noCi) return false;
 	return sameSha(ci.head, entry.sha) && (!head || sameSha(ci.head, head));
 }
 
@@ -80,7 +96,7 @@ export function next(state, head) {
 	return "stop";
 }
 
-export function record(state, { stage, decision, head, reason = "", pr = null, ci = null, preflight = null, at = new Date().toISOString() }) {
+export function record(state, { stage, decision, head, reason = "", pr = null, ci = null, preflight = null, noCi = false, at = new Date().toISOString() }) {
 	if (!RECORDABLE.includes(stage)) throw new Error(`unknown stage ${stage} (want ${RECORDABLE.join("|")})`);
 	if (!DECISIONS.includes(decision)) throw new Error(`unknown decision ${decision} (want ${DECISIONS.join("|")})`);
 	// Every recorded pair has a pre-rendered card (card.mjs ENDINGS); any other would link a missing image.
@@ -90,11 +106,11 @@ export function record(state, { stage, decision, head, reason = "", pr = null, c
 	if (pr) s.pr = pr;
 	if (preflight) s.preflight = preflight;
 	const entry = { decision, at, sha: head || null, reason };
-	if (ci) entry.ci = { state: ci.state, ran: ci.ran, head: ci.head, basis: ci.basis, ran_checks: (ci.ran_checks || []).slice(0, 5), reason: ci.reason };
+	if (ci) entry.ci = { state: ci.state, ran: ci.ran, head: ci.head, basis: ci.basis, ran_checks: (ci.ran_checks || []).slice(0, 5), reason: ci.reason, ...(noCi && isNoCiEvidence(ci) ? { no_ci: true } : {}) };
 	// Skipped CI proves nothing: Ready `proceed` is written only with ci-ran.mjs evidence that is green on this head.
 	if (stage === "ready" && decision === "proceed" && !readyEvidenceOk(entry, head)) {
 		const got = ci ? `CI: ${ci.state} at ${String(ci.head || "?").slice(0, 7)} — ${ci.reason}` : "no --ci-file";
-		throw new Error(`Ready proceed needs green CI evidence at ${String(head || "?").slice(0, 7)} (prepare's ci-ran.mjs --pr <url> > ci.json; --ci-file ci.json); got ${got}`);
+		throw new Error(`Ready proceed needs green CI evidence at ${String(head || "?").slice(0, 7)} (prepare's ci-ran.mjs --pr <url> > ci.json; --ci-file ci.json), or --no-ci with "no checks reported" in a repo with no CI workflow; got ${got}`);
 	}
 	s.stages[stage] = entry;
 	s.stage = stage;
@@ -188,7 +204,7 @@ export function render(state, { assetBase = ASSET_BASE } = {}) {
 		return `| ${ICON[e.decision]} | ${title(stage)} | ${WORD[e.decision]} | ${e.sha ? `\`${e.sha.slice(0, 7)}\`` : ""} | ${when(e.at)} | ${cell(e.reason)} |`;
 	});
 	const ci = state.stages.ready?.ci;
-	const ciLine = ci && `**CI at \`${String(ci.head || "").slice(0, 7)}\`:** ${ci.state === "green" ? "🟢" : "🔴"} ${cell(ci.reason)}${ci.ran_checks?.length ? ` (${ci.ran_checks.map((c) => `\`${cell(c)}\``).join(", ")})` : ""}`;
+	const ciLine = ci && `**CI at \`${String(ci.head || "").slice(0, 7)}\`:** ${ci.state === "green" ? "🟢" : ci.no_ci ? "⚪ no CI in this repo —" : "🔴"} ${cell(ci.reason)}${ci.ran_checks?.length ? ` (${ci.ran_checks.map((c) => `\`${cell(c)}\``).join(", ")})` : ""}`;
 	const v = verdict(o);
 	const meta = [last?.sha && `head <code>${last.sha.slice(0, 7)}</code>`, latest && `updated ${when(latest)}`].filter(Boolean);
 	const action = actionBlock(state);
@@ -220,6 +236,45 @@ export function render(state, { assetBase = ASSET_BASE } = {}) {
 		`<!-- atelier:v1:state ${JSON.stringify(state).replace(/>/g, "\\u003e")} -->`,
 	];
 	return lines.join("\n");
+}
+
+// The after-Build checklist (SKILL.md § After Build returns), checkpointed per PR so a resumed run starts at the
+// first step not done. companions judges aw's hand-back, so it holds across heads; sentinel and early-gate judge a head.
+export const CHECKLIST = ["companions", "sentinel", "early-gate"];
+const HEAD_BOUND = new Set(["sentinel", "early-gate"]);
+
+export function checklistPath(pr, runDir = resolveRunDir()) {
+	const m = String(pr ?? "").match(/github\.com\/([^/\s]+)\/([^/\s]+)\/pull\/(\d+)/);
+	if (!m) throw new Error(`--pr needs a PR URL for the checklist, got ${pr}`);
+	return join(runDir, "checklist", `${m[1]}-${m[2]}-${m[3]}.json`);
+}
+
+export function readChecklist(path) {
+	try {
+		const c = JSON.parse(readFileSync(path, "utf8"));
+		return c && typeof c.steps === "object" ? c : null;
+	} catch {
+		return null;
+	}
+}
+
+export function checkpoint(list, { step, head, aw = null, result = null, at = new Date().toISOString() }) {
+	if (!CHECKLIST.includes(step)) throw new Error(`unknown step ${step} (want ${CHECKLIST.join("|")})`);
+	if (!head) throw new Error("--checkpoint needs --head");
+	if (step === "companions" && !aw && !list?.steps?.companions?.aw) throw new Error("--step companions needs --aw-file (aw's hand-back)");
+	const c = list ? structuredClone(list) : { v: 1, steps: {} };
+	c.steps[step] = { head, at, ...(result ? { result } : {}), ...(step === "companions" ? { aw: aw ?? list.steps.companions.aw } : {}) };
+	return c;
+}
+
+export function resumeStep(list, head) {
+	if (!list || !Object.keys(list.steps).length) return "none";
+	for (const step of CHECKLIST) {
+		const e = list.steps[step];
+		if (!e) return step;
+		if (HEAD_BOUND.has(step) && head && !sameSha(e.head, head)) return step;
+	}
+	return "record";
 }
 
 function readBody(a) {
@@ -395,6 +450,21 @@ function selfTest() {
 	const list = "AW RUN COMPLETE\n- Tier: Full\n- Degraded:\n  - lorekit unreachable\n  - review-loop skipped\n- Needs you: nothing";
 	t("a bulleted Degraded: list is read to its end", companionDecision(list).reason === "skipped: review-loop", JSON.stringify(companionDecision(list)));
 	t("an empty Degraded: does not swallow Needs you:", parseDegraded("AW RUN COMPLETE\n- Tier: Full\n- Degraded:\n- Needs you: review-loop it").skipped.length === 0);
+	// The after-Build checklist resumes at its first unfinished step.
+	t("no checkpoint → none", resumeStep(null, "a1") === "none");
+	let cl = checkpoint(null, { step: "companions", head: "a1", aw: block("none") });
+	t("after companions → sentinel", resumeStep(cl, "a1") === "sentinel" && cl.steps.companions.aw.startsWith("AW RUN COMPLETE"));
+	cl = checkpoint(checkpoint(cl, { step: "sentinel", head: "a1" }), { step: "early-gate", head: "a1", result: "MERGE_GATE: pass — x" });
+	t("every step done on this head → record", resumeStep(cl, "a1") === "record");
+	t("✓ a moved head re-runs the head-bound steps, never the companions check", resumeStep(cl, "b2") === "sentinel" && resumeStep(checkpoint(cl, { step: "sentinel", head: "b2" }), "b2") === "early-gate");
+	t("✗ companions without the hand-back, or an unknown step, is refused", throws(() => checkpoint(null, { step: "companions", head: "a1" })) && throws(() => checkpoint(null, { step: "lunch", head: "a1" })));
+	t("the checklist file is keyed by the PR URL", /checklist\/acme-web-41\.json$/.test(checklistPath("https://github.com/acme/web/pull/41", "/r")) && throws(() => checklistPath("41", "/r")));
+	// No CI in the repo: ci-ran's "no checks reported", stored with no_ci, counts as Ready evidence; skipped checks never do.
+	const none = { state: "not-run", ran: false, head: "a1", reason: "CI not run at a1: no checks reported" };
+	const noCiState = record(record(null, { stage: "build", decision: "proceed", head: "a1" }), { stage: "ready", decision: "proceed", head: "a1", ci: none, noCi: true });
+	t("✓ Ready proceed --no-ci on no checks reported records and lets merge run", noCiState.stages.ready.ci.no_ci === true && next(noCiState, "a1") === "merge" && render(noCiState).includes("⚪ no CI in this repo"));
+	t("✗ Ready proceed on no checks reported without --no-ci is refused", throws(() => record(null, { stage: "ready", decision: "proceed", head: "a1", ci: none })));
+	t("✗ --no-ci never turns skipped checks into evidence", throws(() => record(null, { stage: "ready", decision: "proceed", head: "a1", ci: { ...none, reason: "CI not run at a1: every required check skipped (4)" }, noCi: true })));
 	t("docs review / ux skipped are not companion skips", companionDecision(block("docs review skipped (no drift), ux skipped (not a UI diff)"), { uiDiff: false }).decision === "proceed");
 	return done();
 }
@@ -408,6 +478,20 @@ async function main() {
 			process.stdout.write(c ? c.body : "");
 		} else if (a.upsert) upsert(a.pr, a["body-file"]);
 		else if (a.parse) console.log(JSON.stringify(parse(readBody(a)), null, 2));
+		else if (a.checkpoint) {
+			const path = checklistPath(a.pr);
+			const aw = typeof a["aw-file"] === "string" ? readFileSync(a["aw-file"], "utf8") : null;
+			const c = checkpoint(readChecklist(path), { step: a.step, head: a.head, aw, result: typeof a.result === "string" ? a.result : null });
+			mkdirSync(join(path, ".."), { recursive: true });
+			writeFileSync(path, `${JSON.stringify(c, null, 2)}\n`, "utf8");
+			console.log(`CHECKPOINT: ${a.step} done at ${String(a.head).slice(0, 7)}`);
+			await markCheckpoint({ step: a.step, pr: a.pr });
+		} else if (a["resume-step"]) {
+			const list = readChecklist(checklistPath(a.pr));
+			const step = resumeStep(list, a.head);
+			if (typeof a["aw-out"] === "string" && list?.steps?.companions?.aw) writeFileSync(a["aw-out"], list.steps.companions.aw, "utf8");
+			console.log(`RESUME: ${step}`);
+		}
 		else if (a.next) {
 			const state = parse(readBody(a));
 			const stage = next(state, a.head);
@@ -423,14 +507,16 @@ async function main() {
 		}
 		else if (a.record) {
 			const ci = typeof a["ci-file"] === "string" ? JSON.parse(readFileSync(a["ci-file"], "utf8").replace(/\n?CI: .*\s*$/, "")) : null;
-			const s = record(parse(readBody(a)), { stage: a.stage, decision: a.decision, head: a.head, reason: a.reason === true ? "" : a.reason || "", pr: a.pr, ci, preflight: typeof a.preflight === "string" ? a.preflight : null });
+			// --no-ci is a claim about the repo, so the script checks it rather than taking the flag's word.
+			if (a["no-ci"] && repoHasCi(typeof a["repo-dir"] === "string" ? a["repo-dir"] : process.cwd())) throw new Error("--no-ci: this repo has a workflow that runs on pull_request or push, so no checks reported is not \"no CI\"");
+			const s = record(parse(readBody(a)), { stage: a.stage, decision: a.decision, head: a.head, reason: a.reason === true ? "" : a.reason || "", pr: a.pr, ci, preflight: typeof a.preflight === "string" ? a.preflight : null, noCi: !!a["no-ci"] });
 			process.stdout.write(`${render(s)}\n`);
 			// Deliver is display-only in the state; its telemetry is the bus event rules/deliver.md names.
 			if (STAGES.includes(a.stage)) await markDecision({
 				stage: a.stage, decision: a.decision, reason: a.reason === true ? "" : a.reason || "", head: a.head || null,
 				pr: typeof a.pr === "string" ? a.pr : s.pr, memory: typeof a.memory === "string" ? parseMemory(a.memory) : null,
 			});
-		} else throw new Error("pass one of --next, --record, --companions, --parse, --fetch, --upsert, --self-test");
+		} else throw new Error("pass one of --next, --record, --companions, --checkpoint, --resume-step, --parse, --fetch, --upsert, --self-test");
 	} catch (e) {
 		console.error(`state: ${e.message}`);
 		process.exit(2);

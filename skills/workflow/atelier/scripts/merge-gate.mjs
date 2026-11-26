@@ -12,8 +12,10 @@
 //   proof         = aw-verify's checkReport() from scripts/verify-comment.mjs (the `--check` gate)
 //
 //   node merge-gate.mjs --pr <n|url>                          files, body, and CI via gh
-//   node merge-gate.mjs --pr <n|url> --contract-only          skip the CI and proof checks (atelier's early gate after Build only)
-//   node merge-gate.mjs --files "a.tsx,b.md" --body-file <f> (--rollup-file <json> | --contract-only)   offline;
+//   node merge-gate.mjs --pr <n|url> --early                  the contract, and a verify report in the template shape; no CI read,
+//                                                             no --proven (atelier's early gate after Build)
+//   node merge-gate.mjs --pr <n|url> --contract-only          the contract half only (decision-log's user_visible fill)
+//   node merge-gate.mjs --files "a.tsx,b.md" --body-file <f> (--rollup-file <json> | --early | --contract-only)   offline;
 //                                                             add --comments-file <json array of bodies> for a report in a comment
 //   add --surface-json '<json>' | --surface-file <path>       forwarded to is-ui-diff; without either,
 //                                                             the surface in <repo-dir>/.agents/aw/ui.yml is used
@@ -30,6 +32,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { isMain, makeTester, parseArgs, skillDir } from "./lib.mjs";
+import { repoHasCi } from "./preflight.mjs";
 import { markGate } from "./telemetry.mjs";
 
 export const CONTRACT_DOC = "skills/testing/deployment-verify/rules/contract.md";
@@ -58,21 +61,25 @@ export async function ciFromRollup(json) {
 // The proof half: aw-verify's own end-of-run gate over the PR body and its comments (newest first).
 // Returns the problems `verify-comment.mjs --check --proven` would print; [] means `report complete`.
 // --proven: a complete report can still say ❌ Not verified or ⛔ Blocked, which a merge must refuse.
-export async function proofCheck({ body, comments = [], ui = false, head = null }) {
+// `proven: false` (the early gate) asks only that the report exists in the template shape: right after Build, before
+// Ready's fixes move the head, a verdict tied to a head is not yet the question.
+export async function proofCheck({ body, comments = [], ui = false, head = null, proven = true }) {
 	const { checkReport, provenProblems } = await import(pathToFileURL(join(skillDir("aw-verify", "testing", "AW_VERIFY_DIR"), "scripts", "verify-comment.mjs")).href);
-	return [...checkReport(body, comments, { ui }), ...provenProblems(body, comments, { head })];
+	return [...checkReport(body, comments, { ui }), ...(proven ? provenProblems(body, comments, { head }) : [])];
 }
 
 // A merge needs proof that every acceptance criterion holds: the PR's verify report, ticked, in the template shape.
-export function decideProof(problems, { ui = false } = {}) {
+export function decideProof(problems, { ui = false, early = false } = {}) {
 	if (!problems?.length) return null;
 	const more = problems.length > 1 ? ` (+${problems.length - 1} more)` : "";
+	const run = ui ? "/aw-verify run preview <pr>: a UI diff" : "/aw-verify run checks <pr>: no UI file, so recorded test runs prove each criterion";
 	return {
 		decision: "refuse",
 		reason: `no proof the criteria hold: ${problems[0]}${more}`,
 		how: [
-			`Record this on Ready (failed), then run /aw-verify on <pr> (${ui ? "/aw-verify run preview <pr>: a UI diff" : "/aw-verify run checks <pr>: no UI file, so recorded test runs prove each criterion"}),`,
-			`until verify-comment.mjs --pr <pr> --check${ui ? " --ui" : ""} --proven prints \`report complete\`, then re-run /atelier <pr>. What the report lacks:`,
+			early ? `Still in Build: run ${run.split(":")[0]} now (${run}),` : `Record this on Ready (failed), then run /aw-verify on <pr> (${run}),`,
+			early ? `until verify-comment.mjs --pr <pr> --check${ui ? " --ui" : ""} prints \`report complete\`, then run this early gate again. What the report lacks:`
+				: `until verify-comment.mjs --pr <pr> --check${ui ? " --ui" : ""} --proven prints \`report complete\`, then re-run /atelier <pr>. What the report lacks:`,
 			...problems.map((p) => `  - ${p}`),
 		].join("\n"),
 		proof: problems,
@@ -228,9 +235,15 @@ export function decide({ isUI, contract, hosted = false, optOut: opt = null }) {
 	};
 }
 
+// A repo with no workflow that runs on a PR reports no checks on every head; with `noCi` (repoHasCi() false)
+// that exact evidence passes the CI half. A repo that has CI and reports nothing is still refused.
+export const isNoCiEvidence = (ci) => ci?.state === "not-run" && /no checks reported/.test(String(ci.reason ?? ""));
+export const NO_CI_NOTE = "no CI in this repo (no workflow runs on pull_request or push)";
+
 // A merge needs CI that ran and passed on this head; a skipped, pending, or red head is refused.
-export function decideCi(ci) {
+export function decideCi(ci, { noCi = false } = {}) {
 	if (ci.state === "green") return null;
+	if (noCi && isNoCiEvidence(ci)) return null;
 	const at = ci.head ? ci.head.slice(0, 7) : "head";
 	const reason = ci.state === "not-run" ? ci.reason : `CI ${ci.state} at ${at}: ${ci.reason}`;
 	const how = {
@@ -243,27 +256,31 @@ export function decideCi(ci) {
 
 // `ci` is ci-ran.mjs's result for the head and `comments` the PR's comment bodies (newest first) the proof
 // half reads with the body; both `null` only for the contract-only early gate. Halves decide in order: contract, CI, proof.
-export async function gate({ files, body, surfaceJson, surfaceFile, repoDir = process.cwd(), ci = null, comments = null }) {
+// `early`: the contract and the report's shape after Build; no CI, no --proven.
+export async function gate({ files, body, surfaceJson, surfaceFile, repoDir = process.cwd(), ci = null, comments = null, early = false }) {
 	if (!surfaceJson && !surfaceFile) surfaceJson = await repoSurface(repoDir);
 	const ui = userVisible(files, { surfaceJson, surfaceFile });
 	const contract = await flagContract(body, repoDir);
 	const hosted = await hostedRepo(repoDir);
 	let d = decide({ isUI: ui.isUI, contract, hosted, optOut: optOut(body) });
 	let refusedBy = d.decision === "refuse" ? "contract" : null;
-	const ciRefusal = d.decision === "pass" && ci ? decideCi(ci) : null;
+	const noCi = !!ci && isNoCiEvidence(ci) && !repoHasCi(repoDir);
+	const ciRefusal = d.decision === "pass" && ci ? decideCi(ci, { noCi }) : null;
 	if (ciRefusal) [d, refusedBy] = [ciRefusal, "ci"];
+	else if (noCi && d.decision === "pass") d = { ...d, reason: `${d.reason}; ${NO_CI_NOTE}` };
 	// Tied to the head CI was read at: a report recorded before a later push is not proof of this head.
-	const proof = comments ? await proofCheck({ body, comments, ui: ui.isUI, head: ci?.head ?? null }) : null;
-	const proofRefusal = d.decision === "pass" && proof ? decideProof(proof, { ui: ui.isUI }) : null;
+	const proof = comments ? await proofCheck({ body, comments, ui: ui.isUI, head: ci?.head ?? null, proven: !early }) : null;
+	const proofRefusal = d.decision === "pass" && proof ? decideProof(proof, { ui: ui.isUI, early }) : null;
 	if (proofRefusal) [d, refusedBy] = [proofRefusal, "proof"];
-	else if (proof && d.decision === "pass") d = { ...d, reason: `${d.reason}; every criterion proven (verify report complete)` };
-	const ciOut = ci ? { state: ci.state, head: ci.head, reason: ci.reason } : "not checked (--contract-only)";
-	const proofOut = proof ? (proof.length ? proof : "report complete") : "not checked (--contract-only)";
+	else if (proof && d.decision === "pass") d = { ...d, reason: `${d.reason}; ${early ? "verify report present (proven at Ready)" : "every criterion proven (verify report complete)"}` };
+	const skipped = early ? "not checked (--early)" : "not checked (--contract-only)";
+	const ciOut = ci ? { state: ci.state, head: ci.head, reason: noCi ? `${ci.reason}; ${NO_CI_NOTE}` : ci.reason, ...(noCi ? { no_ci: true } : {}) } : skipped;
+	const proofOut = proof ? (proof.length ? proof : "report complete") : skipped;
 	const { proof: _, ...rest } = d;
 	return { ...rest, refused_by: refusedBy, user_visible: ui.isUI, hosted, has_flag_contract: contract.has, flag: contract.flag ?? null, warning: d.warning ?? null, ui_files: ui.matched, ci: ciOut, proof: proofOut };
 }
 
-async function fromGh(pr, { contractOnly }) {
+async function fromGh(pr, { contractOnly, early = false }) {
 	const gh = (args) => execFileSync("gh", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
 	const files = gh(["pr", "diff", String(pr), "--name-only"]).split("\n").filter(Boolean);
 	const view = JSON.parse(gh(["pr", "view", String(pr), "--json", "body,comments"]));
@@ -271,7 +288,7 @@ async function fromGh(pr, { contractOnly }) {
 	// Newest first, as verify-comment.mjs --check reads them.
 	const comments = (view.comments || []).map((c) => c.body || "").reverse();
 	// Read last, so the CI answer is about the head as it is right before the merge.
-	const ci = contractOnly ? null : await ciCheck(pr);
+	const ci = contractOnly || early ? null : await ciCheck(pr);
 	return { files, body, comments, ci };
 }
 
@@ -402,6 +419,21 @@ async function selfTest() {
 	t("red CI still refuses on ci before proof", r.refused_by === "ci", JSON.stringify(r));
 	r = await gate({ files: ["src/components/Header.tsx"], body: "no contract", repoDir: empty, ci: greenCi, comments: [] });
 	t("a contract refusal still wins over proof", r.refused_by === "contract");
+	r = await gate({ files: ["docs/guide.md"], body: "no report", repoDir: empty, comments: [], early: true });
+	t("✓ the early gate refuses a PR with no verify report, while still in Build", r.refused_by === "proof" && /no intent region/.test(r.reason) && /Still in Build/.test(r.how) && r.ci === "not checked (--early)", JSON.stringify(r));
+	r = await gate({ files: ["docs/guide.md"], body: withBlock("t", splice(splice("", "intent", failed.intent), "aggregate", failed.report)), repoDir: empty, comments: [], early: true });
+	t("the early gate asks for the report's shape, not --proven: a ❌ verdict is Ready's to fix", r.decision === "pass" && /proven at Ready/.test(r.reason), JSON.stringify(r));
+	const noChecks = { state: "not-run", ran: false, head: "abc1234", reason: "CI not run at abc1234: no checks reported" };
+	r = await gate({ files: ["docs/guide.md"], body: PROOF_BODY, repoDir: empty, ci: noChecks, comments: [] });
+	t("✓ no checks reported in a repo with no CI workflow passes the CI half, and says so", r.refused_by === null && r.ci.no_ci === true && /no CI in this repo/.test(r.reason), JSON.stringify(r));
+	const withCi = mkdtempSync(join(tmpdir(), "atelier-gate-ci-"));
+	mkdirSync(join(withCi, ".github", "workflows"), { recursive: true });
+	writeFileSync(join(withCi, ".github", "workflows", "ci.yml"), "on:\n  pull_request:\njobs: {}\n");
+	r = await gate({ files: ["docs/guide.md"], body: PROOF_BODY, repoDir: withCi, ci: noChecks, comments: [] });
+	t("✗ no checks reported in a repo that has a CI workflow still refuses on ci", r.refused_by === "ci" && !r.ci.no_ci, JSON.stringify(r));
+	r = await gate({ files: ["docs/guide.md"], body: PROOF_BODY, repoDir: empty, ci: { ...noChecks, reason: "CI not run at abc1234: every required check skipped (4)" }, comments: [] });
+	t("✗ skipped checks are never read as no CI", r.refused_by === "ci", JSON.stringify(r));
+	rmSync(withCi, { recursive: true, force: true });
 	r = await gate({ files: ["docs/guide.md"], body: "no report", repoDir: empty });
 	t("the contract-only gate never checks proof", r.decision === "pass" && r.proof === "not checked (--contract-only)", JSON.stringify(r));
 	const real = await ciFromRollup(JSON.parse(readFileSync(join(skillDir("prepare", "delivery", "PREPARE_DIR"), "scripts", "fixtures", "skipped-plus-vercel.json"), "utf8")));
@@ -444,20 +476,21 @@ async function main() {
 		let ci = null;
 		let comments = [];
 		const contractOnly = !!a["contract-only"];
-		if (a.pr) ({ files, body, comments, ci } = await fromGh(a.pr, { contractOnly }));
+		const early = !!a.early && !contractOnly;
+		if (a.pr) ({ files, body, comments, ci } = await fromGh(a.pr, { contractOnly, early }));
 		else if (a.files && a["body-file"]) {
 			files = String(a.files).split(/[,\n]/).map((s) => s.trim()).filter(Boolean);
 			body = readFileSync(a["body-file"], "utf8");
 			if (typeof a["rollup-file"] === "string") ci = await ciFromRollup(JSON.parse(readFileSync(a["rollup-file"], "utf8")));
-			else if (!contractOnly) throw new Error("offline mode needs --rollup-file <json> (ci-ran.mjs's query) or --contract-only");
+			else if (!contractOnly && !early) throw new Error("offline mode needs --rollup-file <json> (ci-ran.mjs's query), --early, or --contract-only");
 			if (typeof a["comments-file"] === "string") comments = JSON.parse(readFileSync(a["comments-file"], "utf8"));
 		} else throw new Error("pass --pr <n>, or --files <list> --body-file <path>");
-		const r = await gate({ files, body, surfaceJson: a["surface-json"], surfaceFile: a["surface-file"], repoDir: a["repo-dir"] || process.cwd(), ci, comments: contractOnly ? null : comments });
+		const r = await gate({ files, body, surfaceJson: a["surface-json"], surfaceFile: a["surface-file"], repoDir: a["repo-dir"] || process.cwd(), ci: early ? null : ci, comments: contractOnly ? null : comments, early });
 		console.log(JSON.stringify(r, null, 2));
 		if (r.how) console.log(r.how);
 		if (r.warning) console.log(`warning: ${r.warning}`);
 		console.log(`MERGE_GATE: ${r.decision} — ${r.reason}`);
-		await markGate({ result: r, contractOnly, pr: a.pr ? String(a.pr) : null });
+		await markGate({ result: r, contractOnly: contractOnly || early, early, pr: a.pr ? String(a.pr) : null });
 		process.exit(r.decision === "pass" ? 0 : 1);
 	} catch (e) {
 		console.error(`merge-gate: ${e.message}`);

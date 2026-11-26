@@ -54,6 +54,8 @@ const NEXT_STAGE = { build: "ready", ready: "merge" };
 const COUNTER_STEP_NS = 30n * 1_000_000_000n;
 const COUNTER_MAX_POINTS = 480;
 const SECONDS_BOUNDS = [10, 30, 60, 120, 300, 600, 1200, 1800, 3600, 7200, 14400, 28800, 86400];
+// An abandoned run active this long or less, with no decision, is `duplicate` (rules/telemetry.md § Abandoned runs).
+export const DUPLICATE_MAX_ACTIVE_S = 20;
 const MEMORY_KEYS = { lorekit: ["ok", "unreachable"], lessons_used: "int", bus_failed: "int" };
 
 const nowNs = () => BigInt(Date.now()) * 1_000_000n;
@@ -200,7 +202,7 @@ export function hostFacts(env = process.env, cwd = process.cwd()) {
 
 // A stage reason is free text; metrics and dashboards group by this bounded enum instead.
 export const REASON_BUCKETS = Object.freeze([
-	"none", "merged", "existing_pr", "accepted_skip", "companions_skipped", "ci_not_run_draft", "ci_not_run", "ci_pending",
+	"none", "merged", "superseded", "duplicate", "existing_pr", "accepted_skip", "companions_skipped", "ci_not_run_draft", "ci_not_run", "ci_pending",
 	"ci_red", "gate_contract", "gate_ci", "gate_proof", "proof_missing", "checks_failed", "no_handback", "prepare_blocked", "preflight_gap", "other",
 ]);
 
@@ -208,6 +210,7 @@ export function reasonBucket(reason) {
 	const r = String(reason ?? "").trim();
 	if (!r) return "none";
 	if (/^merged\b/i.test(r)) return "merged";
+	if (/^superseded\b/i.test(r)) return "superseded";
 	if (/existing PR/i.test(r)) return "existing_pr";
 	if (/^accepted skip/i.test(r)) return "accepted_skip";
 	if (/^skipped:/i.test(r)) return "companions_skipped";
@@ -327,6 +330,8 @@ export function buildRun(records, now = nowNs()) {
 	const waitS = run.waits.reduce((a, w) => a + Number(w.endNs - w.startNs) / 1e9, 0);
 	run.totalS = total;
 	run.waitS = Math.min(waitS, total);
+	// A run that decided nothing and was active for seconds is a double invocation or a dropped start, not lost work.
+	run.duplicate = run.outcome === "abandoned" && run.decisions.length === 0 && run.totalS - run.waitS <= DUPLICATE_MAX_ACTIVE_S;
 	return run;
 }
 
@@ -460,6 +465,8 @@ export function toExporter(run, env, otlp) {
 	const smoke = run.facts.smoke === true ? { "atelier.smoke": true } : {};
 	const failed = run.outcome === "failed";
 	const lastReason = run.finish?.reason ?? run.lastDecision?.reason ?? "";
+	// The run counters also carry the duplicate mark, so a merge rate can leave duplicates out of its denominator.
+	const runLabels = { ...smoke, ...(run.duplicate ? { "atelier.run.duplicate": true } : {}) };
 	ex.spans.push({
 		traceId, spanId: rootId, name: "atelier.run", kind: 1,
 		startTimeUnixNano: String(run.startNs), endTimeUnixNano: String(run.endNs),
@@ -468,7 +475,8 @@ export function toExporter(run, env, otlp) {
 			"atelier.run.outcome": run.outcome,
 			"atelier.stage.reached": run.stageReached,
 			"atelier.run.reason": String(lastReason).slice(0, 300) || null,
-			"atelier.run.reason_bucket": reasonBucket(lastReason),
+			"atelier.run.reason_bucket": run.duplicate ? "duplicate" : reasonBucket(lastReason),
+			"atelier.run.duplicate": run.duplicate ? true : null,
 			"atelier.run.duration_s": Math.round(run.totalS),
 			"atelier.run.wait_s": Math.round(run.waitS),
 			"atelier.run.active_s": Math.round(run.totalS - run.waitS),
@@ -517,11 +525,11 @@ export function toExporter(run, env, otlp) {
 	const outcomes = OUTCOMES.includes(run.outcome) ? OUTCOMES : [...OUTCOMES, run.outcome];
 	ex.cumulativeSum(RUN_COUNTER, {
 		unit: "{run}", startNs: run.startNs,
-		points: counterPoints(run.startNs, run.endNs, outcomes.map((o) => ({ "atelier.run.outcome": o, ...smoke })), (l) => (l["atelier.run.outcome"] === run.outcome ? 1 : 0)),
+		points: counterPoints(run.startNs, run.endNs, outcomes.map((o) => ({ "atelier.run.outcome": o, ...runLabels })), (l) => (l["atelier.run.outcome"] === run.outcome ? 1 : 0)),
 	});
 	ex.cumulativeSum(MERGED_COUNTER, {
 		unit: "{pr}", startNs: run.startNs,
-		points: counterPoints(run.startNs, run.endNs, [{ ...smoke }], () => (run.outcome === "merged" ? 1 : 0)),
+		points: counterPoints(run.startNs, run.endNs, [{ ...runLabels }], () => (run.outcome === "merged" ? 1 : 0)),
 	});
 	return ex;
 }
@@ -578,6 +586,22 @@ export async function finishRun(runDir, opts = {}, env = process.env) {
 	}
 }
 
+// What the abandoned run was last seen doing: its open stage, plus the checklist step or decision when the last record names one.
+export function lastEvent(records, last) {
+	if (last.t === "decision") return `decision ${last.stage} ${last.decision}`;
+	const stage = [...records].reverse().find((r) => r.t === "stage")?.name ?? "preflight";
+	const step = last.attrs?.["checklist.step"];
+	if (step) return `stage ${stage} · checklist ${step}`;
+	return last.t === "stage" ? `stage ${stage}` : `stage ${stage} · ${last.t}`;
+}
+
+// Did the next run pick up the same work? The same PR, else the same ticket, else the same repo and branch.
+export function sameWork(a = {}, b = {}) {
+	if (a.pr_url || b.pr_url) return !!a.pr_url && a.pr_url === b.pr_url;
+	if (a.ticket_id || b.ticket_id) return !!a.ticket_id && a.ticket_id === b.ticket_id;
+	return !!a.repo && !!a.branch && a.repo === b.repo && a.branch === b.branch;
+}
+
 // Start a run. An unfinished run already in the ledger was abandoned (its session ended without a record that
 // ends a run): it is finished as `abandoned` and exported first, so a run that stalled still shows where.
 export async function beginRun(runDir, facts = {}, opts = {}, env = process.env) {
@@ -585,8 +609,18 @@ export async function beginRun(runDir, facts = {}, opts = {}, env = process.env)
 	if (hasRun(records)) {
 		const prev = String(records.find((r) => r.t === "run").run_id);
 		if (!isFinished(records)) {
-			const lastNs = records.reduce((a, r) => (BigInt(r.ns) > a ? BigInt(r.ns) : a), 0n);
-			await finishRun(runDir, { outcome: "abandoned", reason: "a later run began", ns: lastNs }, env);
+			const last = records.reduce((a, r) => (BigInt(r.ns) >= BigInt(a.ns) ? r : a), records[0]);
+			const lastNs = BigInt(last.ns);
+			const nextNs = opts.ns ? BigInt(opts.ns) : nowNs();
+			appendRecord(runDir, {
+				t: "attr", target: "run", ns: lastNs,
+				attrs: {
+					"abandon.last_event": lastEvent(records, last),
+					"abandon.idle_s": Math.max(0, Math.round(Number(nextNs - lastNs) / 1e9)),
+					"abandon.same_work": sameWork(buildRun(records, lastNs)?.facts, facts),
+				},
+			});
+			await finishRun(runDir, { outcome: "abandoned", reason: "superseded: a later run began", ns: lastNs }, env);
 		}
 		renameSync(join(runDir, LEDGER_FILE), join(runDir, `telemetry.${prev}.jsonl`));
 		if (existsSync(join(runDir, SUMMARY_FILE))) renameSync(join(runDir, SUMMARY_FILE), join(runDir, `telemetry-summary.${prev}.json`));
@@ -641,7 +675,7 @@ export async function emitState(dir, env = process.env) {
 }
 
 /** preflight.mjs: begin the run, book preflight itself, open the next stage (`build` for a request, `setup` before --next on a PR). */
-export const markPreflight = guarded(async ({ startNs, status, gaps = [], pr = null, model = null, ticket = null, task = null, lookupPr = false, cwd = process.cwd(), runDir } = {}) => {
+export const markPreflight = guarded(async ({ startNs, status, gaps = [], accepted = [], pr = null, model = null, ticket = null, task = null, lookupPr = false, cwd = process.cwd(), runDir } = {}) => {
 	const dir = resolveRunDir({ dir: runDir });
 	const host = hostFacts(process.env, cwd);
 	// No --pr: the branch may already have one (a re-run after a hold); a scratch repo has no origin to ask.
@@ -656,8 +690,11 @@ export const markPreflight = guarded(async ({ startNs, status, gaps = [], pr = n
 	await beginRun(dir, facts, { ns: startNs });
 	appendRecord(dir, { t: "stage", name: "preflight", ns: startNs });
 	const g = [...gaps].sort();
-	appendRecord(dir, { t: "attr", target: "stage", attrs: { "preflight.status": status, "preflight.gaps": g.join(",") || null, "preflight.gap_count": g.length } });
-	appendRecord(dir, { t: "attr", target: "run", attrs: { "preflight.status": status, "preflight.gaps": g.join(",") || null, "preflight.gap_count": g.length, ...(pr ? { "run.resumed": true } : {}) } });
+	// `gaps` are the new ones only; the gaps the repo's preflight.yml accepted ride separately.
+	const acc = [...accepted].sort();
+	const bag = { "preflight.status": status, "preflight.gaps": g.join(",") || null, "preflight.gap_count": g.length, "preflight.accepted": acc.join(",") || null, "preflight.accepted_count": acc.length };
+	appendRecord(dir, { t: "attr", target: "stage", attrs: bag });
+	appendRecord(dir, { t: "attr", target: "run", attrs: { ...bag, ...(pr ? { "run.resumed": true } : {}) } });
 	appendRecord(dir, { t: "stage", name: pr ? "setup" : "build", implicit: true });
 	await emitState(dir);
 	return dir;
@@ -693,13 +730,24 @@ export const markCompanions = guarded(async ({ decision, tier, skipped = [], acc
 	return dir;
 });
 
+/** state.mjs --checkpoint: the after-Build checklist step that just finished, on the open stage and the run. */
+export const markCheckpoint = guarded(async ({ step, pr = null, runDir } = {}) => {
+	const dir = activeRunDir({ runDir });
+	if (!dir || !step) return null;
+	if (pr) appendRecord(dir, { t: "facts", pr });
+	appendRecord(dir, { t: "attr", target: "stage", attrs: { "checklist.step": step } });
+	appendRecord(dir, { t: "attr", target: "run", attrs: { "checklist.step": step } });
+	return dir;
+});
+
 /** merge-gate.mjs: what the gate saw, on the open stage and the run. */
-export const markGate = guarded(async ({ result, contractOnly, pr = null, runDir } = {}) => {
+export const markGate = guarded(async ({ result, contractOnly, early = false, pr = null, runDir } = {}) => {
 	const dir = activeRunDir({ runDir });
 	if (!dir || !result) return null;
 	if (pr) appendRecord(dir, { t: "facts", pr });
 	const bag = {
-		"gate.decision": result.decision, "gate.refused_by": result.refused_by || null, "gate.contract_only": !!contractOnly,
+		"gate.decision": result.decision, "gate.refused_by": result.refused_by || null, "gate.contract_only": !!contractOnly, "gate.early": early ? true : null,
+		"gate.no_ci": result.ci?.no_ci === true ? true : null,
 		user_visible: typeof result.user_visible === "boolean" ? result.user_visible : null,
 		has_flag_contract: typeof result.has_flag_contract === "boolean" ? result.has_flag_contract : null,
 		"gate.no_provider_warning": result.warning ? true : null,
@@ -1077,6 +1125,22 @@ async function selfTest() {
 		const abSum = JSON.parse(readFileSync(join(ab, "telemetry-summary.ab1.json"), "utf8"));
 		t("an abandoned run's duration and active time run from its first to its last event", abSum.outcome === "abandoned" && abSum.total_s === 670 && abSum.active_s === 670 && abSum.stages.at(-1).duration_s === 669, JSON.stringify(abSum));
 		t("an abandoned run's last stage span ends at its last event", abRun.stages.at(-1).name === "build" && abRun.stages.at(-1).endNs === at(670));
+		t("an abandoned run says it was superseded, what it last did, and how long it sat idle", abRun.finish.reason === "superseded: a later run began" && reasonBucket(abRun.finish.reason) === "superseded"
+			&& abRun.attrs["abandon.last_event"] === "stage build · attr" && abRun.attrs["abandon.idle_s"] > 0 && abRun.attrs["abandon.same_work"] === false && abRun.duplicate === false, JSON.stringify(abRun.attrs));
+		const dup = join(dir, "dup");
+		appendRecord(dup, { t: "run", run_id: "d1", facts: { repo: "acme/web", branch: "feat/x" }, ns: at(0) });
+		appendRecord(dup, { t: "stage", name: "preflight", ns: at(0) });
+		appendRecord(dup, { t: "stage", name: "build", implicit: true, ns: at(3) });
+		await beginRun(dup, { repo: "acme/web", branch: "feat/x" }, { ns: at(60) }, {});
+		const dupRun = buildRun(readFileSync(join(dup, "telemetry.d1.jsonl"), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)));
+		t("✓ a 3 s abandoned run with no decision is a duplicate of the same work", dupRun.duplicate === true && dupRun.attrs["abandon.same_work"] === true && dupRun.attrs["abandon.idle_s"] === 57, JSON.stringify(dupRun.attrs));
+		const decided = buildRun([rec({ t: "run", run_id: "d2", facts: {} }, 0), rec({ t: "stage", name: "build" }, 1), rec({ t: "decision", stage: "build", decision: "proceed", pr }, 5),
+			rec({ t: "finish", outcome: "abandoned", reason: "superseded: a later run began" }, 6)]);
+		t("✗ a short abandoned run that recorded a decision is not a duplicate", decided.duplicate === false);
+		t("same work: the PR, else the ticket, else repo and branch", sameWork({ pr_url: pr }, { pr_url: pr }) && !sameWork({ pr_url: pr }, { repo: "acme/web" })
+			&& sameWork({ ticket_id: "AI-1" }, { ticket_id: "AI-1" }) && !sameWork({ repo: "a/b", branch: "x" }, { repo: "a/b", branch: "y" }) && !sameWork({}, {}));
+		t("the last event names a checklist step or a decision", lastEvent([{ t: "stage", name: "companions" }], { t: "attr", attrs: { "checklist.step": "sentinel" } }) === "stage companions · checklist sentinel"
+			&& lastEvent([], { t: "decision", stage: "build", decision: "hold" }) === "decision build hold");
 		t("finish on an empty dir is a quiet no-op", dead.exported === false);
 	} finally {
 		for (const k of Object.keys(process.env)) if (!(k in saved)) delete process.env[k];
