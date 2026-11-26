@@ -1,10 +1,6 @@
 #!/usr/bin/env node
-// rollout-state.mjs — the post-merge half of the live board: one gauge point per rollout transition (rules/rollout-state.md).
-//
-// tick.mjs calls emitRollout() after it writes the PR comment. A tick that changed the phase, the step, or the outcome
-// sends one `deployment.rollout.state` gauge point whose value is the transition's epoch seconds; a tick that changed nothing sends nothing.
-// Export is opt-in, never throws, and never changes a tick's outcome. The OTLP encoder is pr-reviewer's `otlp.mjs`, imported by path.
-//
+// rollout-state.mjs — one `deployment.rollout.state` gauge point per rollout transition, for the live board (rules/rollout-state.md).
+// tick.mjs calls emitRollout() after it writes the PR comment; export is opt-in and never changes a tick's outcome.
 //   node rollout-state.mjs --self-test
 
 import { existsSync, realpathSync } from "node:fs";
