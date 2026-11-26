@@ -50,6 +50,18 @@ export function flagCheck({ present, config = null, error = null }) {
 	return { name, ok: true, value: providers.join(", "), cannot: "" };
 }
 
+// `.agents/aw/merge.yml` → `protection: "<why this repo has no merge queue or required checks>"`. A decision someone made
+// (a user-owned repo cannot have a merge queue; a required-checks rule would block the release job's own push), so it is
+// never a gap: the row shows it on every run, and setup prints it as DECIDED so nobody re-proposes the queue.
+export function mergeProtectionCheck(config) {
+	const name = "merge-protection";
+	if (!config) return { name, ok: true, value: "not declared (no .agents/aw/merge.yml)", cannot: "" };
+	if (config.unknown) return { name, ok: true, value: `unknown (could not parse merge.yml: ${config.unknown})`, cannot: "" };
+	const why = typeof config.protection === "string" ? config.protection.trim() : "";
+	if (!why) return { name, ok: true, value: "not declared (merge.yml has no protection:)", cannot: "" };
+	return { name, ok: true, value: `declared: ${why}`, cannot: "", decided: `${why} (declared in .agents/aw/merge.yml; do not propose a merge queue or required checks unless it changes)` };
+}
+
 export function telemetryCheck(config) {
 	const name = "telemetry";
 	if (!config) return { name, ok: false, value: "none (no .agents/aw/telemetry.yml)", cannot: "telemetry: criteria are unprovable" };
@@ -213,6 +225,7 @@ export function setupPlan(checks, { profile = true, pipeline = true, tracker = t
 		name: "flag-provider",
 		note: "release.yml declares providers: [], so a human flips flags; add a provider there to let /deployment-verify step them",
 	}));
+	for (const c of checks) if (c.decided) steps.push({ kind: "decided", name: c.name, note: c.decided });
 	const awVerifyFixes = ["sign-in", "telemetry"].filter((n) => gap.has(n));
 	if (awVerifyFixes.length) steps.push({ kind: "skill", call: 'Skill("aw-verify", "setup")', fixes: awVerifyFixes });
 	const deployFixes = [...(gap.has("flag-provider") ? ["flag-provider"] : []), ...(pipeline ? [] : ["pipeline (no release.yml pipeline:)"])];
@@ -367,7 +380,7 @@ export async function gather(repo) {
 		}
 	}
 	const workflows = readWorkflows(repo);
-	return [flagCheck(flag), telemetryCheck(await readYaml(join(aw, "telemetry.yml"))), signInCheck(await readYaml(join(aw, "environments.yml"))), ciDraftCheck(workflows), ciCheck(workflows)];
+	return [flagCheck(flag), telemetryCheck(await readYaml(join(aw, "telemetry.yml"))), signInCheck(await readYaml(join(aw, "environments.yml"))), ciDraftCheck(workflows), ciCheck(workflows), mergeProtectionCheck(await readYaml(join(aw, "merge.yml")))];
 }
 
 export async function readAccepted(repo) {
@@ -406,6 +419,11 @@ async function selfTest() {
 	const all = [flagCheck({ present: false }), telemetryCheck({ backend: "dash0-mcp" }), signInCheck({ environments: { local: { auth: { strategy: "none" } } } }), ci];
 	t("the summary line counts and names the gaps", summarize(all).line === "PREFLIGHT: limited — 2 gaps (flag-provider, ci-on-draft)", summarize(all).line);
 	t("no gaps → ok", summarize([telemetryCheck({ backend: "logs" })]).line === "PREFLIGHT: ok — 0 gaps");
+	const mp = mergeProtectionCheck({ protection: "user-owned repo: no merge queue; required checks would block the release push" });
+	t("✓ a declared protection: is shown, never a gap", mp.ok && /^declared: user-owned repo/.test(mp.value) && summarize([mp]).line === "PREFLIGHT: ok — 0 gaps", mp.value);
+	t("setup: a declared protection prints one DECIDED line and delegates nothing", planLines(setupPlan([mp])).join(" / ").startsWith("SETUP: nothing to delegate / DECIDED: merge-protection — user-owned repo") && !planLines(setupPlan([mp])).some((l) => /^SETUP: Skill/.test(l)), planLines(setupPlan([mp])).join(" / "));
+	t("✗ no merge.yml, an empty or non-string protection: is not declared (and not a gap)", [null, {}, { protection: "  " }, { protection: true }].every((c) => { const k = mergeProtectionCheck(c); return k.ok && !k.decided && /^not declared/.test(k.value); }));
+	t("an unparsable merge.yml is unknown, not a gap", mergeProtectionCheck({ unknown: "bad" }).ok && /^unknown/.test(mergeProtectionCheck({ unknown: "bad" }).value));
 	// Constructs from a real repo's valid .agents/aw files that the yaml-lite subset parser rejects.
 	const telemetryYml = [
 		"version: 1", "backend: dash0-mcp  # the witness", "environments:", "  local: { namespace: lorekit }", "web:", "  event_patterns:",
