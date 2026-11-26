@@ -57,6 +57,7 @@ detect: { attribute: service.version, equals: merge_sha }
 detect: { attribute: service.version, equals: merge_sha, tag_prefix: "rel-" }
 ```
 
+Any `detect` other than `manual` on `production` also makes the repo *hosted* for the `atelier` skill: its merge gate then wants a contract or a `deployment-verify:none` opt-out on every PR, and its Deliver step runs this controller on a no-flag contract.
 Check once per tick until live; past `timeout_minutes` (default 60) after `mergedAt`, end with `STOPPED — deploy not detected in <n> min, nothing changed`.
 **Why:** a busy repository deploys the newest merge, so an earlier merge commit may never serve under its own SHA.
 A platform's "deployment succeeded" event says the build is promoted, not that traffic reaches it; the telemetry check still decides.
