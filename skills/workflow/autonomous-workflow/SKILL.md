@@ -186,12 +186,12 @@ Route first: `node "${AW_VERIFY_DIR:-$HOME/.claude/skills/aw-verify}/scripts/ver
 | --- | --- |
 | `none` (no `verify:` block) | steps 0–4 as written, routed by `is-ui-diff.mjs` |
 | `checks …` | step 0, whatever `is-ui-diff.mjs` says |
-| `local before-pr` | step 1 (step 3 when `environments.yml` is missing) |
+| `local before-pr` | a UI diff (`is-ui-diff.mjs` prints `UI_DIFF: yes`): step 1 (step 3 when `environments.yml` is missing); no UI file: step 0, since a browser run has nothing to look at |
 | `preview before-pr` | step 0 for the PR's criteria, then the after-PR preview run below: a preview only exists once the PR does |
-| `preview after-pr` / `local after-pr` | step 0 before the PR; after Phase 6 opens it, the after-PR run below |
+| `preview after-pr` / `local after-pr` | step 0 before the PR; after Phase 6 opens it, the after-PR run below (`local after-pr` on a diff with no UI file: step 0 only) |
 
 **After-PR run.** Once `create-pr` returns the URL, wait for the preview deployment (aw-verify's `rules/config.md` → `environments.preview.url`), then `Skill("aw-verify", "run preview <pr-url>")` (`run local <pr-url>` for `local after-pr`); a stale session signs in through the login hook (aw-verify's `rules/auth.md`).
-It replaces the checks-mode aggregate on the PR, so gate on its report: `verify-comment.mjs --pr <pr-url> --check --ui --browser` (drop `--browser` for `local`) must print `report complete`.
+It replaces the checks-mode aggregate on the PR, so gate on its report: `verify-comment.mjs --pr <pr-url> --check --ui --browser` (drop `--browser` for `local`) must print `report complete`; `--ui` checks the `ui-verify` spec block, which `create-pr` Step 6.4 writes on every UI diff.
 A failed criterion or `❌ not verified` re-enters Phase 3 under the same turn cap and pushes to the same PR; a preview that never deploys, or `LOGIN: failed`, goes under `Needs you:` with the reason, and the PR keeps the checks-mode report.
 
 ```text
