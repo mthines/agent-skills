@@ -117,8 +117,9 @@ export function workflowTriggers(text) {
 	}
 	const block = [];
 	for (const l of lines.slice(at + 1)) {
+		if (!l.trim() || l.trim().startsWith("#")) continue;
 		if (/^\S/.test(l)) break;
-		if (l.trim() && !l.trim().startsWith("#")) block.push(l);
+		block.push(l);
 	}
 	if (!block.length) return [];
 	const indent = Math.min(...block.map((l) => l.match(/^\s*/)[0].length));
@@ -434,6 +435,7 @@ async function selfTest() {
 	t("✓ a pull_request or push workflow is CI", ciCheck([{ file: "ci.yml", text: wf("  pull_request:") }]).ok && ciCheck([{ file: "b.yml", text: "on: [push]\njobs: {}\n" }]).ok);
 	const noCi = ciCheck([{ file: "release.yml", text: "on:\n  workflow_dispatch:\njobs: {}\n" }]);
 	const release = "on:\n  workflow_dispatch:\njobs:\n  r:\n    steps:\n      - run: git push origin HEAD\n      - uses: docker/build-push-action@v5\n";
+	t("✓ a column-0 comment inside the on: block does not end it", ciCheck([{ file: "ci.yml", text: 'on:\n# PRs touching src\n  pull_request:\n    paths: ["src/**"]\n' }]).ok);
 	t("✗ a manual workflow whose steps git push or build-push is not CI", !ciCheck([{ file: "release.yml", text: release }]).ok);
 	t("✓ on: {push: …} inline and a quoted 'on' are CI; workflow_dispatch inline is not", ciCheck([{ file: "a.yml", text: "on: {push: {branches: [main]}}\n" }]).ok && ciCheck([{ file: "b.yml", text: '"on":\n  pull_request:\n' }]).ok && !ciCheck([{ file: "c.yml", text: "on: workflow_dispatch\n" }]).ok);
 	const clone = mkdtempSync(join(tmpdir(), "pf-origin-"));

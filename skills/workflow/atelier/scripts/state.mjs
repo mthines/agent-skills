@@ -245,7 +245,7 @@ const HEAD_BOUND = new Set(["sentinel", "early-gate"]);
 export function checklistPath(pr, runDir = resolveRunDir()) {
 	const m = String(pr ?? "").match(/github\.com\/([^/\s]+)\/([^/\s]+)\/pull\/(\d+)/);
 	if (!m) throw new Error(`--pr needs a PR URL for the checklist, got ${pr}`);
-	return join(runDir, "checklist", `${m[1]}-${m[2]}-${m[3]}.json`);
+	return join(runDir, "checklist", `${m[1]}-${m[2]}-${m[3]}.json`.toLowerCase());
 }
 
 export function readChecklist(path) {
