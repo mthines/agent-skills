@@ -40,6 +40,9 @@ Every other contract defect `validateContract()` finds still refuses, and `cohor
 
 The gate runs right after Build as well as before the merge.
 A contract is the author's, so the cheapest place to fix a missing one is while `aw` still holds the branch; one fix round bounds the cost, and a second refusal is a human's call.
+The early gate also asks for the verify report, because a report that was never written is otherwise found only at Ready, after the CI wait and `prepare`, and a run can spend hours reaching that refusal.
+It asks for the report's shape, not `--proven`: the verdict belongs to the head Ready ends on, and `prepare` may still push to it.
+The fix is one `aw-verify` run rather than a second `aw` round, since `aw-verify` is the only writer of the report.
 
 ## Ready on real CI
 
@@ -70,6 +73,14 @@ It reuses `deployment-verify`'s `loadConfig()` and YAML reader instead of parsin
 A gap blocks only when a stated criterion depends on it, because most runs need only part of the suite, and a preflight that stopped on every missing file would teach users to pass `--accept-gaps` by reflex.
 Its line rides in the state comment so a reviewer reading the PR sees what the run could not prove.
 
+A gap a repo will always have (no flag system, no browser sign-in) is an answer, not missing setup, and repeating it on every run trains readers to skip the line.
+`.agents/aw/preflight.yml` records that answer once, with a reason, in a committed file a reviewer can read; the line then names only new gaps, and an accepted one stays visible after them.
+Accepting a gap never makes a criterion provable, so a stated criterion that needs it still blocks.
+
+A repo with no workflow that runs on a PR reports no checks on any PR, so Ready's "CI ran green" can never hold and every run ends at a hold no one can clear.
+`no checks reported` there is the truth about the repo, not a failure, so Ready and the merge gate accept it, and each checks the repo's workflows itself instead of trusting the agent's flag.
+A repo that has CI and reports nothing is refused as before: a path filter or a broken trigger is exactly the case the CI half exists to catch.
+
 ## A skipped companion holds Build
 
 `aw` names every companion it did not run in its `Degraded:` line, but a line in a long terminal block is easy to miss, and a nested sub-agent that runs short skips the review, `create-pr`, and the quality pass to save context.
@@ -84,6 +95,10 @@ A sticky comment marked `<!-- atelier:v1 -->` lets any later `/atelier <pr>` res
 The comment leads with a pre-rendered status card because GitHub cannot draw an image per comment, and a fixed set of 27 states × 2 themes keeps every run's comment identical in shape; the table stays, collapsed, for the details.
 The card follows the last recorded stage, not the furthest, because a re-run (Ready after a refused merge) leaves later entries behind; `record()` refuses a stage and decision pair with no card, and a Deliver before a merge.
 Ready is re-run when the head moved because a pushed fix can turn CI red or open a thread; a green result on an older head says nothing about the new one.
+
+The after-Build checklist runs before Build is recorded, so it cannot live in the comment: the card set has no state for "PR open, nothing recorded".
+Its checkpoints go beside the telemetry ledger, keyed by the PR URL, so a resume on the same clone starts at the step that did not finish, and a run resumed with the PR URL no longer records Build `skipped` over a checklist that never ran.
+The companions check stores aw's hand-back because the session that held it is gone; the sentinel and the early gate hold only for their head, because a push after them can break either.
 
 ## Ground truth
 

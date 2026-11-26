@@ -7,14 +7,19 @@ tags: [atelier, merge, gate, deployment-verify, ui]
 # Merge gate
 
 Run `node "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/merge-gate.mjs" --pr <pr-url>` in the merge stage, on the current head, immediately before `prepare --merge`; its exit code is the decision.
-After Build, run it with `--contract-only`: CI on a fresh draft has not run and the report is not posted yet, so only the contract half is judged there.
+After Build, run it with `--early`: the contract half, and the proof half without `--proven` (the report must exist in its template shape), but no CI read, since CI on a fresh draft has not run.
+A missing report is then caught while Build can still fix it, by one `aw-verify` run, instead of at Ready after CI and review.
+`--contract-only` judges the contract half alone; only the decision log's `user_visible` fill uses it.
 **Why:** [`../references/design.md` § The merge gate](../references/design.md#the-merge-gate).
 
-Once the contract half passes, CI decides: unless `--contract-only`, the gate reads the head's checks through `prepare`'s `scripts/ci-ran.mjs` and refuses (exit 1) on anything but `CI: green` — `not-run` (every required check, or with none required every GitHub Actions run, skipped or absent; an external status counts only when required), `pending`, or `red`.
+Once the contract half passes, CI decides: unless `--early` or `--contract-only`, the gate reads the head's checks through `prepare`'s `scripts/ci-ran.mjs` and refuses (exit 1) on anything but `CI: green` — `not-run` (every required check, or with none required every GitHub Actions run, skipped or absent; an external status counts only when required), `pending`, or `red`.
+One `not-run` passes: `no checks reported` in a repo whose `--repo-dir` has no workflow on pull_request, push, or merge_group (`preflight.mjs` `repoHasCi()`); the reason then ends `no CI in this repo`, and the JSON's `ci.no_ci` is `true`.
+The directory must be the PR's repository: under `--pr`, the directory's `origin` must name the PR's repo, and offline only an explicit `--repo-dir` counts; otherwise `no checks reported` refuses on `ci` as before.
+A repo that has such a workflow and reports no checks (a path filter, a broken trigger) is still refused.
 Once CI is green, proof decides: unless `--contract-only`, the gate runs `aw-verify`'s own end-of-run gate (`checkReport()` and `provenProblems()` from `scripts/verify-comment.mjs`, what `verify-comment.mjs --pr <pr> --check --proven` prints) over the PR body and comments, with `--ui` when the diff is user-visible, and refuses on any problem: no `intent` region, a criterion still `⬜` or without a Proof cell, no `aggregate` in `report.md.template`'s shape, a UI diff with no `ui-verify` spec block, a criterion marked `❌`, or a `❌ Not verified` / `⛔ Blocked` verdict.
 The JSON's `refused_by` names which half refused (`contract`, `ci`, or `proof`); a `pending` refusal is first waited out with `scripts/ci-wait.mjs` (SKILL.md, *Waiting for CI*) and the gate runs again once; every other `ci` refusal, and a wait that ends `pending`, is recorded on Ready, not Merge (`hold` for `not-run` or `pending`, `failed` for `red`), and so is a `proof` refusal (`failed`), so the next run re-runs Ready (`prepare`, then the proof step's `aw-verify`) instead of refusing at Merge again.
 A passing gate is not an approval: the merge stage then runs `scripts/approval-wait.mjs` (SKILL.md, *Waiting for approval*) and merges only when the review the repo requires is given, by a person or by the automatic check `.agents/aw/merge.yml` names; otherwise it records Merge `hold` for a person.
-Offline (`--files … --body-file …`) it needs `--rollup-file <json>` (a saved response of `ci-ran.mjs`'s query) or `--contract-only`; the proof half reads the body file, plus `--comments-file <json array of bodies>` when the report is a comment.
+Offline (`--files … --body-file …`) it needs `--rollup-file <json>` (a saved response of `ci-ran.mjs`'s query), `--early`, or `--contract-only`; the proof half reads the body file, plus `--comments-file <json array of bodies>` when the report is a comment.
 
 ```text
 ✗ Ready proceed in the state comment → skip the CI read → prepare --merge on a head whose checks all skipped

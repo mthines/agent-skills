@@ -25,6 +25,14 @@ A resume can come days after a hold, from another machine; one trace spanning bo
 Each invocation is its own run joined by `atelier.pr.url`, and the idle time before a resume is recorded as `atelier.resume.idle_s` and a `human` wait, which is the bottleneck a held run hides.
 A session that ends without a run-ending record leaves its run open; the next `preflight.mjs` exports it as `abandoned` with the stage it reached, so a stalled run is counted rather than lost.
 
+## Why abandoned runs carry a last event, and why duplicates leave the merge rate
+
+Every abandoned run used to read `a later run began`, bucketed `other`, so the dashboard showed abandonment as its largest outcome without saying why.
+Half of those runs were active 20 s or less and recorded no decision: a second `/atelier` typed while the first was starting, or a session closed at once.
+Counting them as runs halved the merge rate for work that never began, so they are marked `duplicate` and dropped from the denominator, while a long abandoned run stays in it as real lost work.
+`abandon.last_event` names the checklist step a long one died in, which is the next fix to make, and `abandon.same_work` separates a resume from a run given up for other work.
+The line is one constant, `DUPLICATE_MAX_ACTIVE_S` in `telemetry.mjs`, and a run with any decision is never a duplicate, whatever its length.
+
 ## Why not `invoke_agent`, and why its own scope
 
 pr-reviewer's root is `invoke_agent pr-reviewer` so AI SDLC Insights can list an Agent0 review as a session.

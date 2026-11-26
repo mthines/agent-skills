@@ -147,12 +147,29 @@ Run `/atelier` at the top level of a session, never inside a dispatched sub-agen
 7. With a PR: read its state (`node "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/state.mjs" --fetch --pr <pr-url> > state.md`) and its head (`gh pr view <pr-url> --json headRefOid -q .headRefOid`), then `node "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/state.mjs" --next --head <sha> --body-file state.md` names the stage to run.
    A merged PR makes `--next` print `stop`: run [Deliver](#after-the-merge) on it unless `--no-deliver`, so a session that died during the pipeline wait resumes there.
    Pass the PR URL, not a bare number: `state.mjs` takes owner/repo from the URL, and from cwd's `origin` only for a number.
-   No atelier comment yet: record Build as `skipped` (reason `existing PR`) before `--next`, so it returns `ready` and `aw` never runs on a PR that exists.
+   No atelier comment yet: first run `node "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/state.mjs" --resume-step --pr <pr-url> --head <sha> --aw-out aw.txt`.
+   `RESUME: companions`, `sentinel`, `early-gate`, or `record` → an earlier run built this PR and died in the [after-Build checklist](#after-build-returns): resume Build at that step with the stored `aw.txt` (`record` is step 5), and never run `aw` again.
+   `RESUME: none` → record Build as `skipped` (reason `existing PR`) before `--next`, so it returns `ready` and `aw` never runs on a PR that exists.
    With a request: the stage is `build`.
 
 ### Preflight
 
 Preflight never blocks on its own; a gap blocks only when it leaves a criterion the request (or the existing PR's brief or intent spec) states unprovable.
+A gap the repo accepts in its committed `.agents/aw/preflight.yml` (`accept: { <check>: "<why>" }`, a known check and a non-empty reason) is not counted: the line reads `PREFLIGHT: ok — 0 gaps; 1 accepted (flag-provider)`, and its table row says `accepted`.
+An accepted gap still blocks a stated criterion that needs it, since accepting a gap never makes the criterion provable; never name an accepted gap under `Degraded:`.
+
+```yaml
+# .agents/aw/preflight.yml — committed, no secrets; written by a human, never by a run
+version: 1
+accept:
+  flag-provider: "no flag system; a human flips flags by hand"
+  ci: "a Homebrew tap: no workflow runs on PRs"
+```
+
+```text
+✗ PREFLIGHT: limited — 1 gap (flag-provider) on every run → Degraded: flag-provider, 26 runs in a row   # noise nobody acts on
+✓ preflight.yml accepts flag-provider → PREFLIGHT: ok — 0 gaps; 1 accepted (flag-provider)            # only a new gap shows
+```
 
 | Preflight | A stated criterion needs the missing capability | `--accept-gaps` | Do |
 | --- | --- | --- | --- |
@@ -163,6 +180,7 @@ Preflight never blocks on its own; a gap blocks only when it leaves a criterion 
 
 A row whose value reads `unknown (could not parse …)` is not a gap and decides nothing.
 `ci-on-draft: no` decides nothing here: Ready undrafts to get CI (that notifies reviewers), and under `--keep-draft` Ready holds.
+`ci: none` (no workflow runs on pull_request or push) decides nothing here either: Ready takes `CI: not-run — … no checks reported` as [no CI](#no-ci) instead of holding.
 
 ```text
 ✗ PREFLIGHT: limited — 1 gap (flag-provider) → stop       # no criterion is about the rollout; a human flips the flag
@@ -186,13 +204,14 @@ A Build that fails before a PR exists has nowhere to record: skip step 1, write 
 | Stage | Delegation | `proceed` when | Otherwise |
 | --- | --- | --- | --- |
 | **build** | `Skill("aw", "<request> <build suffix>")` (the suffix on its own paragraph), adding `--no-confirm` under `--unattended`; then the [after-Build checklist](#after-build-returns) | aw's `AW RUN COMPLETE` block names a PR URL, every required companion ran (or the user accepted its skip), the [sentinel](#after-build-returns) passes, and the early gate passes | `hold` (reason `skipped: <companions>`), `failed` (reason = aw's `Needs you:` line or the failing check IDs), or `refuse` after a second early-gate refusal |
-| **ready** | unless `--keep-draft`: `gh pr ready <pr-url>` when the PR is a draft, then [wait for the fresh CI run](#after-undrafting); then `Skill("prepare", "<pr-url> --single")`; then the [CI evidence](#ci-evidence); then the [proof](#proof) | prepare printed `Already green` or fixed every PR it touched, `ci-ran.mjs` printed `CI: green`, and `verify-comment.mjs --check --proven` printed `report complete` | `CI: not-run` → `hold`, reason = its `CI not run …` text (prefixed `CI not run: draft — ` under `--keep-draft`); `CI: pending` → [wait](#waiting-for-ci), then `hold` only when still pending after `--max-wait`; `CI: red` or prepare blocked → `failed`, reason = that line; proof still incomplete after one `aw-verify` run → `failed`, reason = `proof: <first problem>` |
+| **ready** | unless `--keep-draft`: `gh pr ready <pr-url>` when the PR is a draft, then [wait for the fresh CI run](#after-undrafting); then `Skill("prepare", "<pr-url> --single")`; then the [CI evidence](#ci-evidence); then the [proof](#proof) | prepare printed `Already green` or fixed every PR it touched, `ci-ran.mjs` printed `CI: green`, and `verify-comment.mjs --check --proven` printed `report complete` | `CI: not-run … no checks reported` in a repo with no CI → [No CI](#no-ci); any other `CI: not-run` → `hold`, reason = its `CI not run …` text (prefixed `CI not run: draft — ` under `--keep-draft`); `CI: pending` → [wait](#waiting-for-ci), then `hold` only when still pending after `--max-wait`; `CI: red` or prepare blocked → `failed`, reason = that line; proof still incomplete after one `aw-verify` run → `failed`, reason = `proof: <first problem>` |
 | **merge** | gate first, on the live head: `node "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/merge-gate.mjs" --pr <pr-url>`; exit 0 → [wait for approval](#waiting-for-approval) on the same head; `approved` → `Skill("prepare", "<pr-url> --merge --single")` right away; merged → [finding outcomes](#after-the-merge) | the PR state is `MERGED`; reason = `merged <squash sha>`, plus the gate's `warning:` line when it printed one | gate exit 1 with the JSON's `refused_by` = `ci` and `pending` → [wait for CI](#waiting-for-ci), then run the gate again once; any other `ci` refusal, or a wait that ended `pending`, records **Ready** (not Merge) `hold` (`not-run`, `pending`) or `failed` (`red`), reason = the `MERGE_GATE:` line, so `--next` runs Ready again; `refused_by` = `proof` → record **Ready** `failed`, reason = the `MERGE_GATE:` line, so `--next` runs Ready, whose [proof](#proof) step runs `aw-verify`; `refused_by` = `contract` → `refuse`, reason = the `MERGE_GATE:` line; approval `manual` or `pending` → Merge `hold`, reason = the `APPROVAL_WAIT:` line, `Needs you:` as the [approval exit table](#waiting-for-approval) says; approval `moved` → run the gate again on the new head once, then wait again; a second `moved` → Merge `hold`, reason = that line; prepare blocked → `hold`, reason = its line |
 
 The build suffix, appended verbatim to every request:
 
 ```text
 Atelier merges this PR. A user-visible change must sit behind a feature flag (reuse an existing flag when one fits), and the PR body must carry a deployment-verify:v1 contract naming it: draft it with `node <deployment-verify>/scripts/tick.mjs --draft-contract --pr <n>`, then fill "flag": {"key": "<flag>"}, adding "provider" and "cohort" only when .agents/aw/release.yml declares a provider, and no "cohort" for a `rollout: pr` provider (format: deployment-verify rules/contract.md). When .agents/aw/release.yml's production environment detects deploys (its `deploy.detect` is not `manual`), every other change carries a contract too: the same draft with "service" and "root_spans" and no "flag", measured before and after its deploy; a change that deploys nothing carries `<!-- deployment-verify:none — <why nothing deployed can change> -->` instead.
+The PR must also carry its acceptance criteria and a verify report proving each one: atelier's gate right after this Build refuses a PR until `verify-comment.mjs --pr <n> --check` prints `report complete` (aw-verify writes it; never by hand).
 ```
 
 Under `--unattended` add the line `No human is present: run interview with --non-interactive; a blocking question ends the run.`
@@ -251,6 +270,24 @@ node "${PREPARE_DIR:-$HOME/.claude/skills/prepare}/scripts/ci-ran.mjs" --pr <pr-
 ```text
 ✗ 16 checks SKIPPED, 2 Vercel statuses SUCCESS → prepare "Already green" → Ready proceed
 ✓ ci-ran.mjs → CI: not-run — CI not run at b56dfb5: every required check skipped (4) → Ready hold
+```
+
+### No CI
+
+A repo with no workflow that runs on pull_request or push (a Homebrew tap, a docs repo) reports no checks on any PR, so "CI ran green" can never be shown and Ready would hold forever.
+When preflight's `ci` row is a gap and `ci-ran.mjs` prints `CI: not-run — CI not run at <sha>: no checks reported`, skip the undraft wait and record Ready `proceed` with `--no-ci`:
+
+```bash
+node "$S" --record --stage ready --decision proceed --head "$SHA" --ci-file ci.json --no-ci --reason "no CI in this repo" --pr <pr-url> --body-file state.md > next.md
+```
+
+`state.mjs` checks the claim itself: `--no-ci` exits 2 when the repo (cwd, or `--repo-dir`) has a workflow on pull_request or push, or is not a clone of the PR's repo, and it never turns skipped checks into evidence.
+The merge gate applies the same rule on its own, so the proof half still decides the merge.
+
+```text
+✗ no workflow in the repo, ci-ran: no checks reported → Ready hold "CI not run: the tap has no CI" → stuck
+✓ no workflow in the repo, ci-ran: no checks reported → Ready proceed --no-ci → merge gate: CI half passes, proof decides
+✗ repo has ci.yml filtered to src/**, a docs-only PR reports no checks → --no-ci                     # exit 2: the repo has CI
 ```
 
 ### After undrafting
@@ -341,18 +378,29 @@ Atelier never approves a PR itself and never asks a bot to; it only waits for th
 
 `aw` can run for hours in this context; do these in order before anything else, and re-read this section when unsure where the run is:
 
+Checkpoint each of steps 2–4 the moment it passes, so a run that dies here resumes at the next step instead of rebuilding (`--resume-step`, [Step 0](#step-0--setup) item 7):
+
+```bash
+node "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/state.mjs" --checkpoint --pr <pr-url> --step <companions|sentinel|early-gate> --head <sha> [--aw-file aw.txt]   # companions stores aw.txt
+```
+
+```text
+✗ session ends after the sentinel → /atelier <pr-url> → Build skipped (existing PR) → the early gate never ran
+✓ session ends after the sentinel → /atelier <pr-url> → RESUME: early-gate → run step 4, then record
+```
+
 1. **Hand-back.** Find aw's terminal block, the hand-back marker `AW RUN COMPLETE`.
    Take the PR URL from the block's `Delivered:` line, or from the one-line form Micro and Lite may print (`AW RUN COMPLETE — Lite, PR <url>, …`).
    No block, or no PR URL in either form → Build `failed`, reason = its `Needs you:` line (or `no AW RUN COMPLETE block`); bind `PR` and its head sha otherwise.
-2. **Companions.** Save aw's hand-back block to `aw.txt`, run the contract half of the gate once (step 4 judges the same output and exit code), then check the companions:
+2. **Companions.** Save aw's hand-back block to `aw.txt`, run the early gate once (step 4 judges the same output and exit code), then check the companions:
 
    ```bash
    A="${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts"
-   node "$A/merge-gate.mjs" --pr <pr-url> --contract-only > gate.json; echo $? > gate.exit
+   node "$A/merge-gate.mjs" --pr <pr-url> --early > gate.json; echo $? > gate.exit
    node "$A/state.mjs" --companions --aw-file aw.txt [--accept-skip <the user's names>]
    ```
 
-   `COMPANIONS: proceed` → continue; `COMPANIONS: hold — skipped: <names>` → Build `hold` with that reason, and `Needs you: run <names> on <pr-url>, or re-run /atelier <pr-url> --accept-skip <names>`.
+   `COMPANIONS: proceed` → checkpoint `companions` (with `--aw-file aw.txt`) and continue; `COMPANIONS: hold — skipped: <names>` → Build `hold` with that reason, and `Needs you: run <names> on <pr-url>, or re-run /atelier <pr-url> --accept-skip <names>`.
    Required: `review-loop` and `create-pr` on every tier, plus `quality-pass` on Lite and Full, plus `aw-verify` on every Lite or Full diff (browser on a UI diff, checks-only otherwise).
 
    ```text
@@ -360,7 +408,7 @@ Atelier never approves a PR itself and never asks a bot to; it only waits for th
    ✓ Degraded: review-loop skipped (context budget) → Build hold "skipped: review-loop"
    ```
 
-3. **Sentinel.** In the PR branch's worktree (`git worktree list` names it), when `.agent/<branch>/checks.yaml` exists (Full tier), run the checks fresh; Micro and Lite have none and skip this:
+3. **Sentinel.** In the PR branch's worktree (`git worktree list` names it), when `.agent/<branch>/checks.yaml` exists (Full tier), run the checks fresh; Micro and Lite have none: checkpoint `sentinel` and skip this:
 
    ```bash
    AW_SKILL_DIR="${AW_SKILL_DIR:-$HOME/.claude/skills/autonomous-workflow}"
@@ -371,14 +419,21 @@ Atelier never approves a PR itself and never asks a bot to; it only waits for th
 
    | Sentinel | Build |
    | --- | --- |
-   | `CHECKS M/M PASS` | continue |
+   | `CHECKS M/M PASS` | checkpoint `sentinel`; continue |
    | `CHECKS p/M FAIL: <ids>`, every listed id `unsatisfiable` in `--statuses` | continue; carry each id into the final `Needs you:` (`AC-4 unsatisfiable: <why>`) and into the Build reason |
    | any other `FAIL` | `failed`, reason = the sentinel line |
 
-4. **Early gate.** Judge step 2's `merge-gate.mjs --contract-only` result — the contract half only, because CI on a fresh draft has not run yet; on a resumed Build, or when the head moved since step 2, run that gate command again first.
-   Exit 0 → continue.
-   Exit 1 → send Build back once, for that fix only: `Skill("aw", "<pr-url>: make the merge gate pass — <MERGE_GATE line> <the gate's how-to lines> <build suffix>")` (one paragraph each), then run the gate again; a second exit 1 → Build `refuse`, reason = the `MERGE_GATE:` line.
+4. **Early gate.** Judge step 2's `merge-gate.mjs --early` result: the contract, and a verify report in its template shape; not CI (a fresh draft has none yet) and not `--proven` (Ready decides the verdict on its final head).
+   On a resumed Build, or when the head moved since step 2, run that gate command again first.
+   Exit 0 → checkpoint `early-gate`; continue.
+   Exit 1 with `refused_by` = `proof` → the report is missing now, not first at Merge: run `Skill("aw-verify", "run checks <pr-url>")` (or `run preview <pr-url>` when the JSON's `user_visible` is true) once, then the gate again; a second proof refusal → Build `failed`, reason `proof: <the first problem>`.
+   Exit 1 with `refused_by` = `contract` → send Build back once, for that fix only: `Skill("aw", "<pr-url>: make the merge gate pass — <MERGE_GATE line> <the gate's how-to lines> <build suffix>")` (one paragraph each), then run the gate again; a second exit 1 → Build `refuse`, reason = the `MERGE_GATE:` line.
    Exit 2 → Build `failed`, reason = its stderr.
+
+   ```text
+   ✗ early gate --contract-only passes a PR with no verify report → 5 h later, Ready fails "no intent region"
+   ✓ early gate --early → refused_by proof → aw-verify run checks <pr> → gate passes → Ready
+   ```
 5. **Record** Build `proceed` (or the decision above) on the PR, passing `--preflight "<PREFLIGHT line>"`, write the bus event with this gate JSON's `user_visible` and `has_flag_contract`, then run Ready.
 
 A resumed `build` on a PR that exists (the state comment shows Build `refuse` or `failed` after a PR URL was bound) skips `aw` and starts at step 4, so a contract a human added is gated, not rebuilt.

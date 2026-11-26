@@ -16,6 +16,7 @@
 // Whether the telemetry MCP tool answers is the agent's check, not this script's: it cannot call a tool.
 // It never blocks: exit 0 with any number of gaps, 2 on an error.
 
+import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -97,17 +98,98 @@ export function ciDraftCheck(workflows) {
 	};
 }
 
-export function summarize(checks) {
-	const gaps = checks.filter((c) => !c.ok).map((c) => c.name);
-	const line = gaps.length ? `PREFLIGHT: limited — ${gaps.length} gap${gaps.length === 1 ? "" : "s"} (${gaps.join(", ")})` : "PREFLIGHT: ok — 0 gaps";
-	return { gaps, line };
+// Does any workflow run CI on a PR's commits? A trigger on pull_request(_target), push, or merge_group counts;
+// a repo with none (a Homebrew tap, a docs repo) reports no checks on every PR, and that is not a CI failure.
+export const CI_EVENTS = new Set(["pull_request", "pull_request_target", "push", "merge_group"]);
+
+// The events a workflow's top-level `on:` names: inline (`on: push`, `on: [push, pull_request]`, `on: {push: …}`)
+// or as the block's first-level keys. Never the rest of the file, where a step's `git push` or a
+// `docker/build-push-action` would read as a trigger.
+export function workflowTriggers(text) {
+	const lines = String(text).split(/\r?\n/);
+	const at = lines.findIndex((l) => /^(on|"on"|'on')\s*:/.test(l));
+	if (at < 0) return [];
+	const inline = lines[at].replace(/^(on|"on"|'on')\s*:/, "").replace(/#.*$/, "").trim();
+	const words = (t) => t.replace(/^-\s*/, "").replace(/\s*:.*$/, "").replace(/^["']|["']$/g, "");
+	if (inline) {
+		const top = inline.startsWith("{") ? inline.slice(1).replace(/\{[^{}]*\}|\[[^[\]]*\]/g, "") : inline;
+		return top.replace(/[[\]{}]/g, " ").split(/,/).map((w) => words(w.trim())).filter(Boolean);
+	}
+	const block = [];
+	for (const l of lines.slice(at + 1)) {
+		if (!l.trim() || l.trim().startsWith("#")) continue;
+		if (/^\S/.test(l)) break;
+		block.push(l);
+	}
+	if (!block.length) return [];
+	const indent = Math.min(...block.map((l) => l.match(/^\s*/)[0].length));
+	return block.filter((l) => l.match(/^\s*/)[0].length === indent).map((l) => words(l.trim()));
 }
 
-export function table(checks) {
+export function ciCheck(workflows) {
+	const name = "ci";
+	const ci = workflows.filter((w) => workflowTriggers(w.text).some((e) => CI_EVENTS.has(e))).map((w) => w.file);
+	if (ci.length) return { name, ok: true, value: `yes (${ci.length} workflow${ci.length === 1 ? "" : "s"} on pull_request or push)`, cannot: "" };
+	return { name, ok: false, value: "none (no workflow runs on pull_request or push)", cannot: "CI evidence: Ready and the merge gate take \"no checks reported\" as no CI instead of holding" };
+}
+
+export function readWorkflows(repo) {
+	const wfDir = join(repo, ".github", "workflows");
+	return existsSync(wfDir)
+		? readdirSync(wfDir)
+				.filter((f) => /\.ya?ml$/.test(f))
+				.map((f) => ({ file: f, text: readFileSync(join(wfDir, f), "utf8") }))
+		: [];
+}
+
+/** True when the repo at `repo` has a workflow that runs CI on a PR; state.mjs and merge-gate.mjs read it before taking "no checks reported" as no CI. */
+export const repoHasCi = (repo) => ciCheck(readWorkflows(repo)).ok;
+
+// Is `dir` a clone of the PR's repository? A no-CI verdict read from any other directory says nothing about the PR's repo.
+export function repoMatchesPr(dir, prUrl) {
+	const pr = String(prUrl ?? "").match(/github\.com\/([^/\s]+)\/([^/\s]+)\/pull\//);
+	if (!pr) return false;
+	let origin = "";
+	try {
+		origin = execFileSync("git", ["-C", dir, "remote", "get-url", "origin"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+	} catch {
+		return false;
+	}
+	const o = origin.match(/github\.com[:/]([^/\s]+)\/([^/\s]+?)(\.git)?\/?$/);
+	return !!o && o[1].toLowerCase() === pr[1].toLowerCase() && o[2].toLowerCase() === pr[2].toLowerCase();
+}
+
+// `.agents/aw/preflight.yml` → `accept: { <check>: "<why the repo lives without it>" }`. Only a known check with a
+// non-empty reason is accepted; anything else is ignored, so a typo never hides a gap.
+export const PREFLIGHT_FILE = join(".agents", "aw", "preflight.yml");
+export const CHECK_NAMES = ["flag-provider", "telemetry", "sign-in", "ci-on-draft", "ci"];
+
+export function acceptedGaps(config) {
+	const out = {};
+	for (const [k, v] of Object.entries(config?.accept ?? {})) {
+		const why = typeof v === "string" ? v.trim() : "";
+		if (CHECK_NAMES.includes(k) && why) out[k] = why;
+	}
+	return out;
+}
+
+// A gap the repo accepted is not counted, but it is named on the line, so an agent still sees it and its table row.
+export function summarize(checks, accepted = {}) {
+	const missing = checks.filter((c) => !c.ok).map((c) => c.name);
+	const gaps = missing.filter((n) => !accepted[n]);
+	const took = missing.filter((n) => accepted[n]);
+	let line = gaps.length ? `PREFLIGHT: limited — ${gaps.length} gap${gaps.length === 1 ? "" : "s"} (${gaps.join(", ")})` : "PREFLIGHT: ok — 0 gaps";
+	if (took.length) line += `; ${took.length} accepted (${took.join(", ")})`;
+	return { gaps, accepted: took, line };
+}
+
+export function table(checks, accepted = {}) {
+	const status = (c) => (c.ok ? "ok" : accepted[c.name] ? "accepted" : "gap");
+	const value = (c) => (!c.ok && accepted[c.name] ? `${c.value} — accepted: ${accepted[c.name]}` : c.value);
 	return [
 		"| Capability | Status | Value | This run cannot prove |",
 		"| --- | --- | --- | --- |",
-		...checks.map((c) => `| ${c.name} | ${c.ok ? "ok" : "gap"} | ${c.value.replace(/\|/g, "\\|")} | ${c.cannot || "—"} |`),
+		...checks.map((c) => `| ${c.name} | ${status(c)} | ${value(c).replace(/\|/g, "\\|")} | ${c.cannot || "—"} |`),
 	].join("\n");
 }
 
@@ -123,8 +205,9 @@ export const TRACKER = join(".agents", "aw", "tracker.yml");
 const NO_OTEL = new Set(["logs", "none"]);
 export const noOtel = (checks) => NO_OTEL.has(checks.find((c) => c.name === "telemetry")?.backend);
 
-export function setupPlan(checks, { profile = true, pipeline = true, tracker = true } = {}) {
-	const gap = new Set(checks.filter((c) => !c.ok && !isDecided(c)).map((c) => c.name));
+export function setupPlan(checks, { profile = true, pipeline = true, tracker = true, accepted = {} } = {}) {
+	// An accepted gap is the repo's answer, like providers: []; setup never re-asks it.
+	const gap = new Set(checks.filter((c) => !c.ok && !isDecided(c) && !accepted[c.name]).map((c) => c.name));
 	const steps = checks.filter(isDecided).map(() => ({
 		kind: "decided",
 		name: "flag-provider",
@@ -139,7 +222,10 @@ export function setupPlan(checks, { profile = true, pipeline = true, tracker = t
 		steps.push({ kind: "decided", name: "observability-profile", note: `telemetry.yml backend: ${backend} — no OpenTelemetry to profile; run /measurable setup once the app emits traces or metrics` });
 	} else if (!profile) steps.push({ kind: "skill", call: 'Skill("measurable", "setup")', fixes: [`observability-profile (no ${PROFILE})`] });
 	if (!tracker) steps.push({ kind: "skill", call: 'Skill("ticket", "setup")', fixes: [`tracker (no ${TRACKER})`] });
-	const ci = checks.find((c) => c.name === "ci-on-draft" && !c.ok);
+	if (gap.has("ci")) {
+		steps.push({ kind: "manual", name: "ci", fix: `no workflow runs on pull_request or push — add one, or accept it in ${PREFLIGHT_FILE} (accept: { ci: "<why>" })` });
+	}
+	const ci = checks.find((c) => c.name === "ci-on-draft" && !c.ok && !accepted[c.name]);
 	if (ci) {
 		steps.push({
 			kind: "manual",
@@ -280,13 +366,12 @@ export async function gather(repo) {
 			flag = { present, error: e.message };
 		}
 	}
-	const wfDir = join(repo, ".github", "workflows");
-	const workflows = existsSync(wfDir)
-		? readdirSync(wfDir)
-				.filter((f) => /\.ya?ml$/.test(f))
-				.map((f) => ({ file: f, text: readFileSync(join(wfDir, f), "utf8") }))
-		: [];
-	return [flagCheck(flag), telemetryCheck(await readYaml(join(aw, "telemetry.yml"))), signInCheck(await readYaml(join(aw, "environments.yml"))), ciDraftCheck(workflows)];
+	const workflows = readWorkflows(repo);
+	return [flagCheck(flag), telemetryCheck(await readYaml(join(aw, "telemetry.yml"))), signInCheck(await readYaml(join(aw, "environments.yml"))), ciDraftCheck(workflows), ciCheck(workflows)];
+}
+
+export async function readAccepted(repo) {
+	return acceptedGaps(await readYaml(join(repo, PREFLIGHT_FILE)));
 }
 
 async function selfTest() {
@@ -343,10 +428,30 @@ async function selfTest() {
 		writeFileSync(join(tmp, ".agents", "aw", "environments.yml"), envYml);
 		const got = await gather(tmp);
 		const by = Object.fromEntries(got.map((c) => [c.name, c]));
-		t("gather: files yaml-lite rejects are read by the scan, not reported as gaps", by.telemetry.ok && by["sign-in"].ok && summarize(got).gaps.join() === "flag-provider", summarize(got).line);
+		t("gather: files yaml-lite rejects are read by the scan, not reported as gaps", by.telemetry.ok && by["sign-in"].ok && summarize(got).gaps.join() === "flag-provider,ci", summarize(got).line);
 	} finally {
 		rmSync(tmp, { recursive: true, force: true });
 	}
+	t("✓ a pull_request or push workflow is CI", ciCheck([{ file: "ci.yml", text: wf("  pull_request:") }]).ok && ciCheck([{ file: "b.yml", text: "on: [push]\njobs: {}\n" }]).ok);
+	const noCi = ciCheck([{ file: "release.yml", text: "on:\n  workflow_dispatch:\njobs: {}\n" }]);
+	const release = "on:\n  workflow_dispatch:\njobs:\n  r:\n    steps:\n      - run: git push origin HEAD\n      - uses: docker/build-push-action@v5\n";
+	t("✓ a column-0 comment inside the on: block does not end it", ciCheck([{ file: "ci.yml", text: 'on:\n# PRs touching src\n  pull_request:\n    paths: ["src/**"]\n' }]).ok);
+	t("✗ a manual workflow whose steps git push or build-push is not CI", !ciCheck([{ file: "release.yml", text: release }]).ok);
+	t("✓ on: {push: …} inline and a quoted 'on' are CI; workflow_dispatch inline is not", ciCheck([{ file: "a.yml", text: "on: {push: {branches: [main]}}\n" }]).ok && ciCheck([{ file: "b.yml", text: '"on":\n  pull_request:\n' }]).ok && !ciCheck([{ file: "c.yml", text: "on: workflow_dispatch\n" }]).ok);
+	const clone = mkdtempSync(join(tmpdir(), "pf-origin-"));
+	execFileSync("git", ["init", "-q", clone]);
+	execFileSync("git", ["-C", clone, "remote", "add", "origin", "git@github.com:Acme/Tap.git"]);
+	t("repoMatchesPr: the clone's origin is the PR's repo (ssh, any case); another repo or no git is not", repoMatchesPr(clone, "https://github.com/acme/tap/pull/3") && !repoMatchesPr(clone, "https://github.com/acme/web/pull/3") && !repoMatchesPr(tmpdir(), "https://github.com/acme/tap/pull/3"));
+	rmSync(clone, { recursive: true, force: true });
+	t("✗ no workflow, or only a manual one, is a ci gap that says no checks is not a failure", !ciCheck([]).ok && !noCi.ok && /no checks reported/.test(noCi.cannot), noCi.value);
+	const acc = acceptedGaps({ accept: { "flag-provider": "no flag system; a human flips flags", "sign-in": "  ", telemtry: "typo", ci: 3 } });
+	t("accept: only a known check with a non-empty reason counts", JSON.stringify(Object.keys(acc)) === '["flag-provider"]', JSON.stringify(acc));
+	const mixed = [flagCheck({ present: false }), telemetryCheck(null), ciCheck([])];
+	const sm = summarize(mixed, acc);
+	t("an accepted gap leaves the count and is named after it", sm.line === "PREFLIGHT: limited — 2 gaps (telemetry, ci); 1 accepted (flag-provider)" && sm.gaps.join() === "telemetry,ci" && sm.accepted.join() === "flag-provider", sm.line);
+	t("every gap accepted reads ok", summarize([flagCheck({ present: false })], acc).line === "PREFLIGHT: ok — 0 gaps; 1 accepted (flag-provider)");
+	t("the table marks an accepted row and shows its reason", table(mixed, acc).includes("| flag-provider | accepted | none (no .agents/aw/release.yml) — accepted: no flag system; a human flips flags |"));
+	t("setup never re-asks an accepted gap", !planLines(setupPlan([flagCheck({ present: false })], { accepted: acc })).some((l) => /deployment-verify/.test(l)));
 	t("a file nothing can read is unknown, not a gap", telemetryCheck({ unknown: "boom" }).ok && /unknown/.test(signInCheck({ unknown: "boom" }).value) && signInCheck({ unknown: "boom" }).ok);
 	t("the table escapes pipes", table([{ name: "x", ok: false, value: "a|b", cannot: "c" }]).includes("a\\|b"));
 	const bare = [flagCheck({ present: false }), telemetryCheck(null), signInCheck(null), ciDraftCheck([])];
@@ -394,13 +499,14 @@ async function main() {
 	try {
 		const repo = typeof a.repo === "string" ? a.repo : process.cwd();
 		const checks = await gather(repo);
-		const { gaps, line } = summarize(checks);
+		const accepted = await readAccepted(repo);
+		const { gaps, accepted: took, line } = summarize(checks, accepted);
 		// Setup modes start no trace: they are not a run.
 		if (a.setup) {
 			const files = await setupState(repo);
-			const steps = setupPlan(checks, files);
+			const steps = setupPlan(checks, { ...files, accepted });
 			if (a.json) console.log(JSON.stringify({ checks, gaps, steps, files }, null, 2));
-			else console.log([table(checks), line, ...planLines(steps)].join("\n"));
+			else console.log([table(checks, accepted), line, ...planLines(steps)].join("\n"));
 			return;
 		}
 		if (typeof a.compare === "string") {
@@ -410,11 +516,11 @@ async function main() {
 			console.log([text, line, setupLine, ...(files.pipeline ? [] : [PIPELINE_MANUAL])].join("\n"));
 			return;
 		}
-		if (a.json) console.log(JSON.stringify({ checks, gaps }, null, 2));
-		else console.log(table(checks));
+		if (a.json) console.log(JSON.stringify({ checks, gaps, accepted }, null, 2));
+		else console.log(table(checks, accepted));
 		console.log(line);
 		await markPreflight({
-			startNs, status: gaps.length ? "limited" : "ok", gaps,
+			startNs, status: gaps.length ? "limited" : "ok", gaps, accepted: took,
 			pr: typeof a.pr === "string" ? a.pr : null, model: typeof a.model === "string" ? a.model : null,
 			ticket: typeof a.ticket === "string" ? a.ticket : null, task: typeof a.task === "string" ? a.task : null, lookupPr: true, cwd: repo,
 		});

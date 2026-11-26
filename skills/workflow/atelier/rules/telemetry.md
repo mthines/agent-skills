@@ -16,6 +16,7 @@ The scripts record it; [`scripts/telemetry.mjs`](../scripts/telemetry.mjs) is th
 - [What you add](#what-you-add)
 - [Export](#export)
 - [Schema](#schema)
+- [Abandoned runs](#abandoned-runs)
 - [Reading it back](#reading-it-back)
 - [Dashboard](#dashboard)
 
@@ -23,11 +24,12 @@ The scripts record it; [`scripts/telemetry.mjs`](../scripts/telemetry.mjs) is th
 
 | Boundary | Recorded by |
 | --- | --- |
-| run starts, `preflight` span, its gaps; the work (`--ticket`, `--task`, branch, `origin` repo, the branch's open PR via `gh`) | `preflight.mjs` (begins the run; a run still open in the ledger is exported as `abandoned`, ending at its own last event) |
+| run starts, `preflight` span, its new and accepted gaps; the work (`--ticket`, `--task`, branch, `origin` repo, the branch's open PR via `gh`) | `preflight.mjs` (begins the run; a run still open in the ledger is exported as `abandoned`, ending at its own last event — [Abandoned runs](#abandoned-runs)) |
 | the run's PR, as soon as any command names it (`--pr` URL, or a number resolved against `origin`) | `state.mjs --next` · `--companions` · `--record`, `merge-gate.mjs --pr` |
 | the next stage opens on a resume; the human wait since the last hold | `state.mjs --next` |
 | `build` ends, `companions` starts; tier, skipped and accepted companions | `state.mjs --companions` |
-| gate decision, `refused_by`, `user_visible`, `has_flag_contract` | `merge-gate.mjs` |
+| a finished after-Build checklist step | `state.mjs --checkpoint` |
+| gate decision, `refused_by`, `user_visible`, `has_flag_contract`, early or no-CI | `merge-gate.mjs` |
 | a stage's decision; the next stage opens; a run-ending decision exports the run | `state.mjs --record` |
 | outcome sweep counts; one `atelier.outcome` span per changed outcome | `outcomes.mjs` |
 | the open run's state as one `atelier.run.state` gauge point, at each run boundary above (not the outcome sweep) and at the start and end of every `wait` | `emitState` in `telemetry.mjs`; a run that ends exports it with its trace |
@@ -98,7 +100,7 @@ Every attribute and metric name below is a dashboard contract: renaming one empt
 
 | Span | Attributes |
 | --- | --- |
-| `atelier.run` (root) | `atelier.run.outcome` (`merged` · `held` · `refused` · `failed` · `stopped` · `abandoned`), `atelier.stage.reached`, `atelier.run.reason`, `atelier.run.reason_bucket`, `atelier.run.duration_s` · `.active_s` · `.wait_s`, `atelier.run.decisions`, `atelier.run.resumed`, `atelier.resume.idle_s` · `.after` · `.after_bucket`, `atelier.preflight.status` · `.gaps` · `.gap_count`, `atelier.tier`, `atelier.companions.decision` · `.skipped` · `.accepted`, `atelier.gate.decision` · `.refused_by` · `.contract_only`, `atelier.user_visible`, `atelier.has_flag_contract`, `atelier.memory.lorekit` · `.lessons_used` · `.bus_failed` · `.decision_events` · `.outcomes_listed`, `atelier.outcomes.final` · `.changed`; ERROR only when the outcome is `failed` |
+| `atelier.run` (root) | `atelier.run.outcome` (`merged` · `held` · `refused` · `failed` · `stopped` · `abandoned`), `atelier.stage.reached`, `atelier.run.reason`, `atelier.run.reason_bucket`, `atelier.run.duration_s` · `.active_s` · `.wait_s`, `atelier.run.decisions`, `atelier.run.duplicate`, `atelier.run.resumed`, `atelier.resume.idle_s` · `.after` · `.after_bucket`, `atelier.abandon.last_event` · `.idle_s` · `.same_work`, `atelier.preflight.status` · `.gaps` (new only) · `.gap_count` · `.accepted` · `.accepted_count`, `atelier.tier`, `atelier.companions.decision` · `.skipped` · `.accepted`, `atelier.checklist.step`, `atelier.gate.decision` · `.refused_by` · `.contract_only` · `.early` · `.no_ci`, `atelier.user_visible`, `atelier.has_flag_contract`, `atelier.memory.lorekit` · `.lessons_used` · `.bus_failed` · `.decision_events` · `.outcomes_listed`, `atelier.outcomes.final` · `.changed`; ERROR only when the outcome is `failed` |
 | `atelier.stage <name>` | `preflight` · `setup` (a resume before `--next`) · `build` · `companions` · `ready` · `merge`; `atelier.stage.name`, `.decision`, `.reason`, `.reason_bucket`, `.recorded_as` (the state-machine stage when it differs); ERROR only on `failed` |
 | `atelier.wait <kind>` | child of its stage; `atelier.wait.kind`, `atelier.wait.exit_code` |
 | `atelier.outcome` | its own trace; `atelier.outcome` (`clean` · `reverted` · `hotfixed`), `atelier.outcome.previous`, `atelier.outcome.evidence_count`, `atelier.merge_sha` |
@@ -110,8 +112,8 @@ Every attribute and metric name below is a dashboard contract: renaming one empt
 
 | Metric | Type | Attributes |
 | --- | --- | --- |
-| `atelier.runs` | CUMULATIVE sum, one series per run (`service.instance.id` = trace id), 0 baseline every 30 s | `atelier.run.outcome`, `atelier.smoke` |
-| `atelier.prs.merged` | same shape, final value 1 when merged | `atelier.smoke` |
+| `atelier.runs` | CUMULATIVE sum, one series per run (`service.instance.id` = trace id), 0 baseline every 30 s | `atelier.run.outcome`, `atelier.smoke`, `atelier.run.duplicate` |
+| `atelier.prs.merged` | same shape, final value 1 when merged | `atelier.smoke`, `atelier.run.duplicate` |
 | `atelier.run.state` | GAUGE, seconds: epoch time of the transition; one series per run and state | `atelier.run.id`, `atelier.work.ref`, `vcs.repository.name`, `atelier.stage.name`, `atelier.run.state` (`active` · `waiting_ci` · `waiting_review` · `waiting_human` · `waiting_other` · then the six outcomes), `atelier.reason_bucket` (ended runs), `atelier.smoke` |
 | `deployment.rollout.state` | GAUGE, seconds, from `deployment-verify` (service `deployment-verify`): epoch time of the rollout's last transition; keyed by `atelier.work.ref` (the run's PR URL) | `deployment.phase`, `deployment.step`, `deployment.outcome`, `deployment.env`, `atelier.smoke` |
 | `atelier.outcomes` | CUMULATIVE sum, 0 then 1 per outcome change | `atelier.outcome`, `atelier.smoke` |
@@ -154,6 +156,27 @@ histogram_quantile(0.9, sum by (atelier_stage_name) (increase({otel_metric_name=
 ```
 
 D0QL has no `quantile`.
+
+## Abandoned runs
+
+A run whose session ended with no run-ending record is closed by the next `preflight.mjs` as `abandoned`, reason `superseded: a later run began` (bucket `superseded`), and its root span says what it last did:
+
+| Attribute | Value |
+| --- | --- |
+| `atelier.abandon.last_event` | the open stage, plus the checklist step or decision when the last record names one: `stage companions · checklist sentinel`, `decision build hold` |
+| `atelier.abandon.idle_s` | seconds from its last record to the next run's start |
+| `atelier.abandon.same_work` | the next run names the same PR, else the same ticket, else the same repo and branch |
+| `atelier.run.duplicate` | `true` when it recorded no decision and was active ≤ 20 s (`DUPLICATE_MAX_ACTIVE_S`); its bucket is then `duplicate` |
+
+A duplicate is a double invocation or a dropped start, not lost work: every throughput panel filters `atelier_run_duplicate=""`, the merge rate in its denominator too.
+
+```promql
+# correct: duplicates leave the denominator; a merged run is never a duplicate
+sum(increase({otel_metric_name="atelier.prs.merged", service_name="atelier", atelier_smoke=""}[$__range] anchored)) / sum(increase({otel_metric_name="atelier.runs", service_name="atelier", atelier_smoke="", atelier_run_duplicate=""}[$__range] anchored))
+
+# incorrect: nine 3 s double invocations halve the merge rate
+sum(increase({otel_metric_name="atelier.prs.merged", service_name="atelier", atelier_smoke=""}[$__range] anchored)) / sum(increase({otel_metric_name="atelier.runs", service_name="atelier", atelier_smoke=""}[$__range] anchored))
+```
 
 ## Reading it back
 

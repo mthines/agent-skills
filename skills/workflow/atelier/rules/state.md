@@ -17,6 +17,7 @@ A Ready `proceed` also carries `ci`: the `prepare` helper `ci-ran.mjs`'s verdict
 `--record` refuses Ready `proceed` (exit 2) unless that verdict is `green` with `ran: true` at `--head`.
 The preflight line is stored at the top level of the state by the first `--record … --preflight "<line>"` and kept by every later record.
 A Build `hold` for companions that did not run carries reason `skipped: <names>`, which `state.mjs --companions` prints.
+A Ready `proceed` recorded with `--no-ci` stores `ci.no_ci: true` on `no checks reported` evidence; `--record` exits 2 when the repo (cwd, or `--repo-dir`) has a workflow on pull_request or push, or, with `--pr`, when that directory's `origin` is not the PR's repo, and `--next` accepts the entry as Ready evidence only with that flag.
 
 ```text
 ✗ node state.mjs --record --stage build --decision proceed --reason "Degraded: review-loop skipped"   # an unreviewed PR walks on
@@ -60,6 +61,17 @@ A change to `card.mjs` or `mascot.mjs` re-renders the cards (`render-cards.mjs`,
 ```text
 ✗ edit card.mjs, commit                         # comments link cards that no longer match the code
 ✓ node render-cards.mjs && node gallery.mjs      # gallery.mjs --self-test fails on a stale README or a missing card
+```
+
+## Checklist
+
+The after-Build checklist (SKILL.md § After Build returns) runs before Build is recorded, so it has no comment to live in; `state.mjs --checkpoint` writes it to `<run dir>/checklist/<owner>-<repo>-<n>.json`, beside the telemetry ledger.
+Steps run in order: `companions` (stores aw's hand-back, holds across heads), `sentinel`, and `early-gate` (each holds only for the head it ran on).
+`state.mjs --resume-step --pr <url> --head <sha>` prints `RESUME: none` (no checkpoint), the first step not done, or `record` (every step done on this head); `--aw-out <f>` writes the stored hand-back back out.
+
+```text
+✗ /atelier <pr-url> on a PR whose run died after the companions check → Build skipped (existing PR)   # sentinel and early gate never ran
+✓ /atelier <pr-url> → state.mjs --resume-step → RESUME: sentinel → Build resumes at step 3 with aw.txt
 ```
 
 ## Resume
