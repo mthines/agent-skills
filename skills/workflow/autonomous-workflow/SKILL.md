@@ -178,37 +178,46 @@ Never write `checks.yaml` or `checks.lock` on Lite: `checks.lock` is what marks 
 
 ### Lite verify
 
-Lite proves every change before the PR: a UI change in the browser, the same way Full Step 4.1 does, and any other change by recorded test runs.
+Lite proves every change before the PR: a UI change in the browser, the same way Full Step 4.1 does, a change the repo's path rules send to the local stack there too, and any other change by recorded test runs.
 
-Route first: `node "${AW_VERIFY_DIR:-$HOME/.claude/skills/aw-verify}/scripts/verify-env.mjs" --base origin/<base>` reads the repo's path rules (`ui.yml` → `verify:`, aw-verify's `rules/config.md`); its last line picks the step.
+Route first, passing `--ui-diff` from `ui-verify`'s `is-ui-diff.mjs` (`UI_DIFF: yes|no`):
 
-| `VERIFY_ENV:` | Run |
+```bash
+node "${AW_VERIFY_DIR:-$HOME/.claude/skills/aw-verify}/scripts/verify-env.mjs" --base origin/<base> --tier lite --ui-diff <yes|no>   # last line: VERIFY_RUN: …
+```
+
+It reads the repo's path rules (`ui.yml` → `verify:`, aw-verify's `rules/config.md`) and whether `.agents/aw/environments.yml` exists; its last line picks the step.
+
+| `VERIFY_RUN:` | Run |
 | --- | --- |
-| `none` (no `verify:` block) | steps 0–4 as written, routed by `is-ui-diff.mjs` |
-| `checks …` | step 0, whatever `is-ui-diff.mjs` says |
-| `local before-pr` | a UI diff (`is-ui-diff.mjs` prints `UI_DIFF: yes`): step 1 (step 3 when `environments.yml` is missing); no UI file: step 0, since a browser run has nothing to look at |
-| `preview before-pr` | step 0 for the PR's criteria, then the after-PR preview run below: a preview only exists once the PR does |
-| `preview after-pr` / `local after-pr` | step 0 before the PR; after Phase 6 opens it, the after-PR run below (`local after-pr` on a diff with no UI file: step 0 only) |
+| `checks before-pr` | step 0; on a UI diff with no `environments.yml`, step 3 |
+| `local before-pr` | step 1, whether or not the diff has a UI file: the stack, each criterion through the local UI and API, and the telemetry |
+| `local after-pr` | step 0 before the PR; after Phase 6 opens it, the after-PR run below with `run local <pr-url>` |
+| `preview after-pr` | step 0 before the PR; after Phase 6 opens it, the after-PR run below: a preview only exists once the PR does |
+
+With no `verify:` block the line is what Lite did before path rules: `local` on a UI diff with `environments.yml`, `checks` otherwise.
 
 **After-PR run.** Once `create-pr` returns the URL, wait for the preview deployment (aw-verify's `rules/config.md` → `environments.preview.url`), then `Skill("aw-verify", "run preview <pr-url>")` (`run local <pr-url>` for `local after-pr`); a stale session signs in through the login hook (aw-verify's `rules/auth.md`).
-It replaces the checks-mode aggregate on the PR, so gate on its report: `verify-comment.mjs --pr <pr-url> --check --ui --browser` (drop `--browser` for `local`) must print `report complete`; `--ui` checks the `ui-verify` spec block, which `create-pr` Step 6.4 writes on every UI diff.
+It replaces the checks-mode aggregate on the PR, so gate on its report: `verify-comment.mjs --pr <pr-url> --check --ui --browser` (drop `--browser` for `local`, and `--ui` on a diff with no UI file) must print `report complete`; `--ui` checks the `ui-verify` spec block, which `create-pr` Step 6.4 writes on every UI diff.
 A failed criterion or `❌ not verified` re-enters Phase 3 under the same turn cap and pushes to the same PR; a preview that never deploys, or `LOGIN: failed`, goes under `Needs you:` with the reason, and the PR keeps the checks-mode report.
 
 ```text
 ✗ Wrong — rule says preview after-pr, Lite runs local before the PR and stops
 ✓ Right — checks mode → create-pr → preview deploys → aw-verify run preview <pr-url> → --check --ui --browser: report complete
+✗ Wrong — rule says local, the diff is backend only, Lite runs checks mode because no file is UI
+✓ Right — VERIFY_RUN: local before-pr → aw-verify run local → stack up, criteria through the local UI and API, telemetry read
 ```
 
-0. No UI file in the diff (`ui-verify`'s `is-ui-diff.mjs` prints `UI_DIFF: no`) → `Skill("aw-verify", "run checks --no-push --no-comment")` (aw-verify's `rules/checks-mode.md`): each AC's command before on the base and after on the branch, rendered into `.agent/<branch>/verify/`.
+0. `VERIFY_RUN: checks …` (and before the PR on `… after-pr`) → `Skill("aw-verify", "run checks --no-push --no-comment")` (aw-verify's `rules/checks-mode.md`): each AC's command before on the base and after on the branch, rendered into `.agent/<branch>/verify/`.
    Continue only after `verify-comment.mjs --check --local .agent/<branch>/verify` prints `local report complete`; a failed criterion re-enters Phase 3 under the same turn cap.
-1. A UI diff and `.agents/aw/environments.yml` exists → `Skill("aw-verify", "run local --no-push --no-comment --foreign-stack abort")`.
-   It copies the `AC-{n}` criteria from the Lite `plan.md`, writes the specs, runs them through `ui-verify`, fixes what it finds as separate commits, and leaves its screenshots and recordings where `create-pr` Step 6.2 picks them up.
-   Continue only after `verify-comment.mjs --check --local .agent/<branch>/verify --ui` (in `aw-verify`'s `scripts/`) prints `local report complete`; `--ui` checks `specs.md` too, since this path runs only on a UI diff.
+1. `VERIFY_RUN: local before-pr` → `Skill("aw-verify", "run local --no-push --no-comment --foreign-stack abort")`.
+   It copies the `AC-{n}` criteria from the Lite `plan.md`, starts the stack, checks each criterion through the local UI and API (specs through `ui-verify` for `ui:` criteria), reads the telemetry, fixes what it finds as separate commits, and leaves its screenshots and recordings where `create-pr` Step 6.2 picks them up.
+   Continue only after `verify-comment.mjs --check --local .agent/<branch>/verify [--ui]` (in `aw-verify`'s `scripts/`) prints `local report complete`; pass `--ui` on a UI diff, so `specs.md` is checked too.
    Any line the gate prints re-enters `aw-verify` (mark the criteria, re-render `report.md`, or tag the AC), never Lite step 5.
    Copy every `Degraded: flag <key> not restored …` line `aw-verify` printed into the run's `Degraded:` verbatim, and its restore command into `Needs you:`.
 2. A failed `ui:` criterion, a `❌ not verified` verdict, or a `telemetry:` AC whose receipt is `contradicts` re-enters Phase 3 under the same turn cap.
    Any other `telemetry:` receipt that is not `confirms` goes under `Degraded:`, as Full Step 4.1 leaves it unpassed.
-3. A UI diff and no `.agents/aw/environments.yml` → checks mode as in step 0, each `ui:` AC no test reaches recorded `unsatisfiable` (the verdict caps at `⚠️`; `create-pr` Step 6.4 authors the `ui-verify` spec block, so Phase 6's `--check --ui` still passes), `verify run: not configured` under `Degraded:`, and `run /aw-verify setup` under `Needs you:`; never block on setup.
+3. `VERIFY_RUN: checks before-pr` on a UI diff (no `.agents/aw/environments.yml`) → checks mode as in step 0, each `ui:` AC no test reaches recorded `unsatisfiable` (the verdict caps at `⚠️`; `create-pr` Step 6.4 authors the `ui-verify` spec block, so Phase 6's `--check --ui` still passes), `verify run: not configured` under `Degraded:`, and `run /aw-verify setup` under `Needs you:`; never block on setup.
 4. Print the `verify run:` line from Full's `AW EVIDENCE` block ([`aw/rules/full-tier.md` § Step 4](./aw/rules/full-tier.md#step-4--verify-walkthrough-pr-evidence)) in Lite's `AW EVIDENCE` block.
 
 ```text
