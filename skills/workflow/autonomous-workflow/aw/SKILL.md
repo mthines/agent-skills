@@ -82,7 +82,7 @@ MODE SELECTION:
 | Tier | Who runs it | Plan artifact | Companions |
 | ---- | ----------- | ------------- | ---------- |
 | **Micro** | You, single-pass: Phase 0 quick confirm (with `--interview`: worktree first, then the interview inside it) → Phase 2 worktree → edit → fast check → `docs update` only on drift → `create-pr --no-post-review` ([Review](#review)) → publish ≥ 1 AC and its proof | in-conversation brief + `plan.md` holding ≥ 1 `AC-{n}` | `aw-verify` checks mode; docs if needed |
-| **Lite** | You, single-pass: the Lite path from `SKILL.md` | short `plan.md` brief, no `checks.yaml` | per signal; `aw-verify` on every diff (browser on a UI diff, checks mode otherwise); Phase 5 docs and Phase 6 `create-pr` always |
+| **Lite** | You, single-pass: the Lite path from `SKILL.md` | short `plan.md` brief, no `checks.yaml` | per signal; `aw-verify` on every diff (the run `verify-env.mjs --tier lite` names: the local stack, the preview, or checks mode); Phase 5 docs and Phase 6 `create-pr` always |
 | **Full** | You write a short brief + sealed `checks.yaml`, work to them here, then a local `review-loop` converges the diff | `plan.md` + `checks.yaml` | `review-loop` (local), `create-pr`, `aw-tester` on UI, `ci-auto-fix`; the rest at your judgment |
 
 Full tier: [`rules/full-tier.md`](rules/full-tier.md) — read when the tier is Full. It holds the brief, the work loop, the local review, the `feature-pr-verifier` dispatch at PR open, and the no-dispatch fallback.

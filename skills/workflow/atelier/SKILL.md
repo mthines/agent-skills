@@ -452,7 +452,7 @@ node "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/state.mjs" --che
    ```
 
    `COMPANIONS: proceed` → checkpoint `companions` (with `--aw-file aw.txt`) and continue; `COMPANIONS: hold — skipped: <names>` → Build `hold` with that reason, and `Needs you: run <names> on <pr-url>, or re-run /atelier <pr-url> --accept-skip <names>`.
-   Required: `review-loop` and `create-pr` on every tier, plus `quality-pass` on Lite and Full, plus `aw-verify` on every Lite or Full diff (browser on a UI diff, checks-only otherwise).
+   Required: `review-loop` and `create-pr` on every tier, plus `quality-pass` on Lite and Full, plus `aw-verify` on every Lite or Full diff (the run `verify-env.mjs --tier` names: the local stack, the preview, or checks only).
 
    ```text
    ✗ Degraded: review-loop skipped (context budget) → Build proceed     # an unreviewed PR walks to the merge

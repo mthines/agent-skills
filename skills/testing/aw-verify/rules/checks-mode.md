@@ -10,7 +10,7 @@ tags:
 
 # Checks mode
 
-Read when the diff has no UI file (`ui-verify`'s `is-ui-diff.mjs` prints `UI_DIFF: no`) or the caller passed `run checks`.
+Read when the caller passed `run checks`, or a bare `run` on a diff with no UI file (`ui-verify`'s `is-ui-diff.mjs` prints `UI_DIFF: no`); `run local` on such a diff runs the local stack instead.
 A non-UI diff still needs proof: the criteria it claims, and a run showing each one holds.
 Checks mode supplies that run without a browser, a stack, or `.agents/aw/environments.yml`, and writes it in the same format as every other run: the PR's `intent` region and an `aggregate` region in [`report.md.template`](../templates/report.md.template)'s shape.
 The same `--check` gate then judges it.

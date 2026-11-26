@@ -84,7 +84,7 @@ const COMPANION_ALIASES = {
 export function requiredCompanions({ tier = "Full" } = {}) {
 	const out = ["review-loop", "create-pr"];
 	if (tier !== "Micro") out.push("quality-pass");
-	// Every Lite/Full PR proves its criteria: aw-verify in the browser on a UI diff, checks-only otherwise.
+	// Every Lite/Full PR proves its criteria with aw-verify; verify-env.mjs --tier picks checks, local, or preview.
 	if (tier !== "Micro") out.push("aw-verify");
 	return out;
 }
