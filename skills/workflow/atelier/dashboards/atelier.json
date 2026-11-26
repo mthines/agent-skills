@@ -604,9 +604,245 @@
             }
           ]
         }
+      },
+      "now_by_stage": {
+        "kind": "Panel",
+        "spec": {
+          "display": {
+            "name": "In flight by stage",
+            "description": "Runs that have not ended, by the stage they are in and whether they are active or waiting (ci, review, human). A held run is ended here: it shows under Recently ended."
+          },
+          "plugin": {
+            "kind": "BarChart",
+            "spec": {
+              "calculation": "last-number",
+              "format": {
+                "unit": "decimal"
+              },
+              "sort": "desc"
+            }
+          },
+          "queries": [
+            {
+              "kind": "TimeSeriesQuery",
+              "spec": {
+                "plugin": {
+                  "kind": "PrometheusTimeSeriesQuery",
+                  "spec": {
+                    "query": "count by (atelier_stage_name, atelier_run_state) (topk by (atelier_run_id) (1, last_over_time({otel_metric_name=\"atelier.run.state\", service_name=\"atelier\", atelier_smoke=\"\"}[3d])) unless on (atelier_run_id) last_over_time({otel_metric_name=\"atelier.run.state\", service_name=\"atelier\", atelier_smoke=\"\", atelier_run_state=~\"merged|held|refused|failed|stopped|abandoned\"}[3d]))",
+                    "seriesNameFormat": "{{atelier_stage_name}} · {{atelier_run_state}}"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "now_prs": {
+        "kind": "Panel",
+        "spec": {
+          "display": {
+            "name": "In flight PRs",
+            "description": "One bar per run that has not ended: work ref (the PR, else ticket or repo@branch) · stage · state. Each bar is 1; the state changed at the gauge value (atelier.run.state)."
+          },
+          "plugin": {
+            "kind": "BarChart",
+            "spec": {
+              "calculation": "last-number",
+              "format": {
+                "unit": "decimal"
+              },
+              "sort": "asc"
+            }
+          },
+          "queries": [
+            {
+              "kind": "TimeSeriesQuery",
+              "spec": {
+                "plugin": {
+                  "kind": "PrometheusTimeSeriesQuery",
+                  "spec": {
+                    "query": "count by (atelier_work_ref, atelier_stage_name, atelier_run_state) (topk by (atelier_run_id) (1, last_over_time({otel_metric_name=\"atelier.run.state\", service_name=\"atelier\", atelier_smoke=\"\"}[3d])) unless on (atelier_run_id) last_over_time({otel_metric_name=\"atelier.run.state\", service_name=\"atelier\", atelier_smoke=\"\", atelier_run_state=~\"merged|held|refused|failed|stopped|abandoned\"}[3d]))",
+                    "seriesNameFormat": "{{atelier_work_ref}} · {{atelier_stage_name}} · {{atelier_run_state}}"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "now_ended": {
+        "kind": "Panel",
+        "spec": {
+          "display": {
+            "name": "Recently ended",
+            "description": "Runs that ended in the range: work ref · how it ended · stage · why (bounded reason). A failed or held run names its reason here. A resume is a new run, so a held PR also appears In flight once resumed."
+          },
+          "plugin": {
+            "kind": "BarChart",
+            "spec": {
+              "calculation": "last-number",
+              "format": {
+                "unit": "decimal"
+              },
+              "sort": "asc"
+            }
+          },
+          "queries": [
+            {
+              "kind": "TimeSeriesQuery",
+              "spec": {
+                "plugin": {
+                  "kind": "PrometheusTimeSeriesQuery",
+                  "spec": {
+                    "query": "count by (atelier_work_ref, atelier_run_state, atelier_stage_name, atelier_reason_bucket) (last_over_time({otel_metric_name=\"atelier.run.state\", service_name=\"atelier\", atelier_smoke=\"\", atelier_run_state=~\"merged|held|refused|failed|stopped|abandoned\"}[$__range]))",
+                    "seriesNameFormat": "{{atelier_work_ref}} · {{atelier_run_state}} at {{atelier_stage_name}} · {{atelier_reason_bucket}}"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "rollout_now": {
+        "kind": "Panel",
+        "spec": {
+          "display": {
+            "name": "Rollouts in progress",
+            "description": "Merged PRs whose deployment-verify rollout has not finished: PR · phase (deploy, baseline, step, hold, rollback) · step percent. A hold waits for a human approve or override."
+          },
+          "plugin": {
+            "kind": "BarChart",
+            "spec": {
+              "calculation": "last-number",
+              "format": {
+                "unit": "decimal"
+              },
+              "sort": "asc"
+            }
+          },
+          "queries": [
+            {
+              "kind": "TimeSeriesQuery",
+              "spec": {
+                "plugin": {
+                  "kind": "PrometheusTimeSeriesQuery",
+                  "spec": {
+                    "query": "count by (atelier_work_ref, deployment_phase, deployment_step) (topk by (atelier_work_ref) (1, last_over_time({otel_metric_name=\"deployment.rollout.state\", service_name=\"deployment-verify\", atelier_smoke=\"\"}[7d])) unless on (atelier_work_ref) last_over_time({otel_metric_name=\"deployment.rollout.state\", service_name=\"deployment-verify\", atelier_smoke=\"\", deployment_phase=\"done\"}[7d]))",
+                    "seriesNameFormat": "{{atelier_work_ref}} · {{deployment_phase}} {{deployment_step}}"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "rollout_ended": {
+        "kind": "Panel",
+        "spec": {
+          "display": {
+            "name": "Rollouts finished",
+            "description": "Rollouts that reached a verdict in the range: PR · outcome (PASS, ROLLED_BACK, ESCALATE, …). The reason is in the PR report comment."
+          },
+          "plugin": {
+            "kind": "BarChart",
+            "spec": {
+              "calculation": "last-number",
+              "format": {
+                "unit": "decimal"
+              },
+              "sort": "asc"
+            }
+          },
+          "queries": [
+            {
+              "kind": "TimeSeriesQuery",
+              "spec": {
+                "plugin": {
+                  "kind": "PrometheusTimeSeriesQuery",
+                  "spec": {
+                    "query": "count by (atelier_work_ref, deployment_outcome) (last_over_time({otel_metric_name=\"deployment.rollout.state\", service_name=\"deployment-verify\", atelier_smoke=\"\", deployment_phase=\"done\"}[$__range]))",
+                    "seriesNameFormat": "{{atelier_work_ref}} · {{deployment_outcome}}"
+                  }
+                }
+              }
+            }
+          ]
+        }
       }
     },
     "layouts": [
+      {
+        "kind": "Grid",
+        "spec": {
+          "display": {
+            "title": "Pipeline now",
+            "collapse": {
+              "open": true
+            }
+          },
+          "items": [
+            {
+              "x": 0,
+              "y": 0,
+              "width": 8,
+              "height": 8,
+              "content": {
+                "$ref": "#/spec/panels/now_by_stage"
+              }
+            },
+            {
+              "x": 8,
+              "y": 0,
+              "width": 16,
+              "height": 8,
+              "content": {
+                "$ref": "#/spec/panels/now_prs"
+              }
+            },
+            {
+              "x": 0,
+              "y": 8,
+              "width": 24,
+              "height": 10,
+              "content": {
+                "$ref": "#/spec/panels/now_ended"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "kind": "Grid",
+        "spec": {
+          "display": {
+            "title": "Rollout now (after the merge)",
+            "collapse": {
+              "open": true
+            }
+          },
+          "items": [
+            {
+              "x": 0,
+              "y": 0,
+              "width": 12,
+              "height": 8,
+              "content": {
+                "$ref": "#/spec/panels/rollout_now"
+              }
+            },
+            {
+              "x": 12,
+              "y": 0,
+              "width": 12,
+              "height": 8,
+              "content": {
+                "$ref": "#/spec/panels/rollout_ended"
+              }
+            }
+          ]
+        }
+      },
       {
         "kind": "Grid",
         "spec": {

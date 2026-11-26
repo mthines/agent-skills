@@ -47,8 +47,24 @@ Preflight is the first command of every run and already knows the request, the b
 
 ## Why smoke runs are marked by the environment and the remote
 
+A PR URL names its repo, so a `--record` that names a PR from a directory with no `origin` is a real run, not a scratch one.
 The trace a test exports is indistinguishable from a real one, so the test says so with `ATELIER_SMOKE`; a repo without `origin` cannot hold a PR atelier could merge, so its runs are scratch runs.
 A repo with a remote is never guessed to be a test: the runs that once looked like tests came from a real session in another repo.
+
+## Why a state gauge, with the transition time as its value
+
+A trace exports once, when the run ends, and a span cannot be revised after export, so a PR sitting in `build` or `ready` is invisible to a trace-only dashboard.
+`atelier.run.state` is a gauge exported at every boundary the hooks already record: its value is the transition's epoch seconds, so `topk by (atelier_run_id) (1, …)` keeps each run's newest state and a run's earlier states fall away.
+A run that has ended counts as ended on the board, `held` included: a resume is a new run, and treating a hold as live would list the PR twice once it resumed.
+Arithmetic on the value (`time() - …`) collapsed every series to one number in Dash0, so the board shows state and stage per run and leaves ages to the metric explorer.
+A run whose session died without a record that ends it stays on the board until the 3-day window closes, which is the signal that it stalled.
+
+## Why the rollout is its own gauge
+
+An atelier run ends at the merge, and `deployment-verify` ticks for hours after it, often from a scheduled automation with no atelier ledger.
+So the rollout reports itself: `deployment.rollout.state`, keyed by the PR URL that `atelier.work.ref` also carries.
+It is a separate service because a rollout is not an atelier run: the board joins the two on the PR, and a PR can have a run and no rollout.
+A hold belongs to the rollout, not the run: the rollout is still live and resumes as the same PR, so it stays under "in progress" until `done`.
 
 ## Why stage percentiles use atelier's histogram
 

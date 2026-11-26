@@ -30,6 +30,7 @@ The scripts record it; [`scripts/telemetry.mjs`](../scripts/telemetry.mjs) is th
 | gate decision, `refused_by`, `user_visible`, `has_flag_contract` | `merge-gate.mjs` |
 | a stage's decision; the next stage opens; a run-ending decision exports the run | `state.mjs --record` |
 | outcome sweep counts; one `atelier.outcome` span per changed outcome | `outcomes.mjs` |
+| the open run's state as one `atelier.run.state` gauge point, at each boundary above and at the start and end of every `wait` | `emitState` in `telemetry.mjs`; a run that ends exports it with its trace |
 
 The ledger is `<git common dir>/atelier-telemetry/telemetry.jsonl`, shared by every worktree of the clone; set `ATELIER_RUN_DIR` to give a concurrent second run in the same clone its own.
 Telemetry writes only to the ledger and stderr, never to stdout, and never changes a script's exit code.
@@ -111,6 +112,8 @@ Every attribute and metric name below is a dashboard contract: renaming one empt
 | --- | --- | --- |
 | `atelier.runs` | CUMULATIVE sum, one series per run (`service.instance.id` = trace id), 0 baseline every 30 s | `atelier.run.outcome`, `atelier.smoke` |
 | `atelier.prs.merged` | same shape, final value 1 when merged | `atelier.smoke` |
+| `atelier.run.state` | GAUGE, seconds: epoch time of the transition; one series per run and state | `atelier.run.id`, `atelier.work.ref`, `vcs.repository.name`, `atelier.stage.name`, `atelier.run.state` (`active` · `waiting_ci` · `waiting_review` · `waiting_human` · `waiting_other` · then the six outcomes), `atelier.reason_bucket` (ended runs), `atelier.smoke` |
+| `deployment.rollout.state` | GAUGE, seconds, from `deployment-verify` (service `deployment-verify`): epoch time of the rollout's last transition; keyed by `atelier.work.ref` (the run's PR URL) | `deployment.phase`, `deployment.step`, `deployment.outcome`, `deployment.env`, `atelier.smoke` |
 | `atelier.outcomes` | CUMULATIVE sum, 0 then 1 per outcome change | `atelier.outcome`, `atelier.smoke` |
 | `atelier.stage.duration` | DELTA histogram, seconds | `atelier.stage.name`, `atelier.stage.decision`, `atelier.smoke` |
 | `atelier.wait.duration` | DELTA histogram, seconds | `atelier.wait.kind` (`human` = idle between a hold and the resume), `atelier.smoke` |
@@ -121,6 +124,22 @@ sum by (atelier_run_outcome) (increase({otel_metric_name="atelier.runs", service
 
 # incorrect: one DELTA point per run has no baseline, so runs go missing
 histogram_count(increase({otel_metric_name="atelier.stage.duration"}[1d]))
+```
+
+The board ("Pipeline now") reads `atelier.run.state`; an ended run, `held` included, drops off the in-flight panels:
+
+```promql
+# correct: the newest state per run, runs that have ended removed
+topk by (atelier_run_id) (1, last_over_time({otel_metric_name="atelier.run.state", service_name="atelier", atelier_smoke=""}[3d]))
+  unless on (atelier_run_id) last_over_time({otel_metric_name="atelier.run.state", service_name="atelier", atelier_smoke="", atelier_run_state=~"merged|held|refused|failed|stopped|abandoned"}[3d])
+
+# incorrect: every state a run passed through, so one PR is listed once per state
+last_over_time({otel_metric_name="atelier.run.state", service_name="atelier", atelier_smoke=""}[3d])
+```
+
+```promql
+# incorrect: time() - gauge returned one value for every series in Dash0
+time() - topk by (atelier_run_id) (1, last_over_time({otel_metric_name="atelier.run.state", service_name="atelier"}[3d]))
 ```
 
 Stage percentiles and totals come from the `atelier.stage.duration` histogram, never from `dash0.spans.duration`, which returned no value grouped by `atelier_stage_name`.
@@ -192,5 +211,6 @@ A pr-reviewer or other skill's trace started during a run joins by PR and time: 
 
 ## Dashboard
 
-[`dashboards/atelier.json`](../dashboards/atelier.json) is a Perses dashboard: throughput, bottlenecks (stage time, active vs waiting), why runs stop (holds, companions, preflight, outcomes), and memory.
+[`dashboards/atelier.json`](../dashboards/atelier.json) is a Perses dashboard: the pipeline now (in-flight runs by stage and state, recently ended runs with their reason), the rollout after the merge (`deployment.rollout.state`, written by `deployment-verify`), throughput, bottlenecks (stage time, active vs waiting), why runs stop (holds, companions, preflight, outcomes), and memory.
 Import it in Dash0 under Dashboards → Create → Import (paste the JSON), or apply it as a `PersesDashboard` resource through the Dash0 operator; never edit it from a run.
+Import it into the dataset the export targets (`Dash0-Dataset` in `ATELIER_OTLP_HEADERS` or `PR_REVIEWER_OTLP_HEADERS`) on the Dash0 instance that endpoint belongs to.
