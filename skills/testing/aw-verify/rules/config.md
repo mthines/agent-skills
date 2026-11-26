@@ -178,10 +178,10 @@ A monorepo proves a web change on the PR preview and a service change on the loc
 
 | Key | Meaning |
 | --- | --- |
-| `rules` | Ordered list of `{paths, env, when}`. The **first** rule whose `paths` globs cover **every** changed file wins; a diff that spans two rules matches neither |
+| `rules` | Ordered list of `{paths, env, when}`. The **first** rule whose `paths` globs cover **every** changed file wins; a diff that spans two rules matches neither. Globs take `**`, `*`, and `?` only: no braces (`*.{ts,tsx}` matches nothing), and a directory is `apps/web/**`, never bare `apps/web` |
 | `default` | `{env, when}` (or a bare env name), used when no rule matches or there are no `rules`; it takes no `paths` |
 | `env` | `preview` (browser run on the PR preview), `local` (browser run on the local stack), `checks` (recorded test runs, [`checks-mode.md`](./checks-mode.md)) |
-| `when` | `before-pr` (default) or `after-pr`: the run needs the PR's own deployment, so the PR opens first (the `autonomous-workflow` skill's *Lite verify*) |
+| `when` | `before-pr` or `after-pr`; the default is `after-pr` for `preview` (a preview exists only once the PR does) and `before-pr` otherwise. `after-pr`: the run needs the PR's own deployment, so the PR opens first (the `autonomous-workflow` skill's *Lite verify*) |
 
 No `verify:` block, or rules that match nothing with no `default` → `VERIFY_ENV: none`: the caller keeps today's routing (`is-ui-diff.mjs`, then `local` or `checks`).
 Callers never read the block themselves; they run [`verify-env.mjs`](../scripts/verify-env.mjs) and read its last line:

@@ -7,7 +7,8 @@
 //       - { paths: ['docs/**', '**/*.md'], env: checks }
 //     default: { env: checks }   # no rule matched, or no rules; `when` optional
 //
-// env: preview | local | checks.  when: before-pr (default) | after-pr.
+// env: preview | local | checks.  when: before-pr | after-pr; default after-pr for preview (it needs the PR's
+// deployment), before-pr otherwise. Globs: **, *, ? only — no braces; a directory is `dir/**`, never bare `dir`.
 // No `verify:` block → `VERIFY_ENV: none`: the caller keeps its own routing (is-ui-diff, then local or checks).
 // A `verify:` block whose rules match nothing and that has no `default` → `none` as well.
 //
@@ -44,6 +45,7 @@ function validate(where, env, when) {
   if (when != null && !WHENS.includes(when)) throw new Error(`${where}: when "${when}" is not one of ${WHENS.join(", ")}`);
 }
 
+const defaultWhen = (env) => (env === "preview" ? "after-pr" : "before-pr");
 const asList = (v) => (v == null ? [] : Array.isArray(v) ? v : [v]).map(String);
 
 export function chooseEnv(files, verify) {
@@ -61,11 +63,11 @@ export function chooseEnv(files, verify) {
   if (changed.length) {
     for (const [n, r] of rules.entries()) {
       if (changed.every((f) => covered(f, asList(r.paths)))) {
-        return { env: r.env, when: r.when ?? "before-pr", source: `rule ${n + 1}`, paths: asList(r.paths), files: changed.length };
+        return { env: r.env, when: r.when ?? defaultWhen(r.env), source: `rule ${n + 1}`, paths: asList(r.paths), files: changed.length };
       }
     }
   }
-  if (def) return { env: def.env, when: def.when ?? "before-pr", source: changed.length ? "default (no rule covers every file)" : "default (empty diff)", files: changed.length };
+  if (def) return { env: def.env, when: def.when ?? defaultWhen(def.env), source: changed.length ? "default (no rule covers every file)" : "default (empty diff)", files: changed.length };
   return { env: "none", when: null, source: "no rule matched and no default", files: changed.length };
 }
 
@@ -126,6 +128,7 @@ function selfTest() {
   t("default as a bare string", line(chooseEnv(["x.go"], { default: "checks" })) === "VERIFY_ENV: checks before-pr");
   t("rules with no match and no default → none", line(chooseEnv(["x.go"], { rules: [{ paths: ["web/**"], env: "preview" }] })) === "VERIFY_ENV: none");
   t("a leading ./ is ignored", chooseEnv(["./apps/web/a.tsx"], V).source === "rule 1");
+  t("preview with no when runs after the PR", line(chooseEnv(["x.go"], { default: "preview" })) === "VERIFY_ENV: preview after-pr");
   t("an unknown env is an error", throws(() => chooseEnv(["a"], { default: { env: "staging" } })));
   t("an unknown when is an error", throws(() => chooseEnv(["a"], { rules: [{ paths: ["a"], env: "local", when: "later" }] })));
   t("a rule without paths is an error", throws(() => chooseEnv(["a"], { rules: [{ env: "local" }] })));

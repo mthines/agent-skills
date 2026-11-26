@@ -5,7 +5,8 @@
 // package. This reads what the committed config files hold: block mappings and sequences by indent,
 // `- key: v` sequence items, flow `[a, 'b']` and `{ k: v }` (one level of nesting), plain, single- and
 // double-quoted scalars, `|` / `>` block scalars with `-` chomping, and `#` comments.
-// Not supported (throws or reads as a string): anchors, aliases, tags, multi-document files.
+// Not supported: anchors, aliases, tags, multi-document files, multi-line flow collections; a line it cannot
+// place throws, so a caller never reads a file cut short.
 //
 // Usage: import { parseYaml } from "./lib/yaml-lite.mjs";   node yaml-lite.mjs --self-test
 import { realpathSync } from "node:fs";
@@ -146,7 +147,10 @@ export function parseYaml(text) {
 
   skip();
   if (i >= lines.length) return null;
-  return node(lines[i].indent);
+  const doc = node(lines[i].indent);
+  skip();
+  if (i < lines.length) throw new Error(`yaml-lite: cannot read line ${i + 1}: ${lines[i].text}`);
+  return doc;
 }
 
 function selfTest() {
@@ -169,6 +173,10 @@ function selfTest() {
   t("a value with a colon and no space stays a string", eq(parseYaml("u: https://x.dev:3000/a\n"), { u: "https://x.dev:3000/a" }));
   const env = parseYaml("version: 1\nenvironments:\n  preview:\n    auth:\n      storage_state: .browser/s.json\n      refresh:\n        when: always\n        command: >-\n          sh -c 'E2E_EMAIL=\"$X\"\n          node login.mjs'\n        timeout_seconds: 300\n");
   t("environments.yml shape", env.environments.preview.auth.refresh.command === "sh -c 'E2E_EMAIL=\"$X\" node login.mjs'" && env.environments.preview.auth.refresh.timeout_seconds === 300);
+  let threw = false; try { parseYaml("a: [\n  x,\n  y\n]\nverify:\n  default: checks\n"); } catch { threw = true; }
+  t("a multi-line flow list throws instead of dropping the keys after it", threw);
+  threw = false; try { parseYaml("a:\n    b: 1\n  c: 2\n"); } catch { threw = true; }
+  t("a mis-indented key throws", threw);
   t("an empty document is null", parseYaml("# only a comment\n") === null);
 
   console.log(`yaml-lite self-test: ${pass} passed, ${fail} failed`);

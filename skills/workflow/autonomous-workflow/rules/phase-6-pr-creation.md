@@ -73,10 +73,10 @@ D=".agent/$(git branch --show-current)"
 | --- | --- |
 | `aw-verify run local` (a UI diff, Lite or Full) | `node "$VC" --pr "$PR_URL" --section intent --from-plan "$D/plan.md"`, then `Skill("aw-verify", "report <pr-url>")` |
 | Checks mode (`aw-verify run checks`, any diff with no UI file, and every Micro run) | `node "$VC" --checks "$D/verify/runs.json" --from-plan "$D/plan.md" --pr "$PR_URL" --head "$(git rev-parse HEAD)"` |
-| A path rule with `when: after-pr` or `env: preview` (`verify-env.mjs`, Lite verify's route table) | first the checks-mode row; then, once the preview deploys, `Skill("aw-verify", "run preview <pr-url>")`, which rewrites the aggregate; the gate below adds `--ui --browser` |
+| `VERIFY_ENV: preview …` or `local after-pr` (`verify-env.mjs`, Lite verify's route table) | first the checks-mode row; then, once the PR is up, Lite's after-PR run (`run preview <pr-url>`, or `run local <pr-url>` for `local after-pr`), which rewrites the aggregate; the gate below adds `--ui`, and `--browser` for `preview` only |
 | Full's sealed checks, no UI file | the checks-mode row, with the `runs.json` that `--run` recorded in Step 4, or `--checks "$(node "$AW_SKILL_DIR/scripts/run-checks.mjs" "$D/checks.yaml" --statuses)"` when a check's `expect` is not an exit code (the report labels those `run-checks`) |
 
-Then gate, with `--ui` on a UI diff, and `--browser` once a path rule's preview run has posted (`--browser` refuses a report that is not a browser run on the preview at the PR head):
+Then gate, with `--ui` on a UI diff, and `--browser` once a `VERIFY_ENV: preview` run has posted (`--browser` refuses a report that is not a browser run on the preview at the PR head):
 
 ```bash
 node "$VC" --pr "$PR_URL" --check      # last line must be: report complete

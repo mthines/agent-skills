@@ -23,7 +23,7 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { isAbsolute, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseYaml } from "./lib/yaml-lite.mjs";
 
@@ -91,8 +91,9 @@ export function urlProblem(envName, envCfg, rawUrl) {
   if (url?.comment?.host_pattern) patterns.push(new RegExp(`^(?:${url.comment.host_pattern})$`));
   if (typeof url?.template === "string") {
     try {
-      const host = new URL(url.template.replace(/\{pr\}/g, "0")).host;
-      patterns.push(new RegExp("^" + host.replace(/[.+^$()|[\]\\]/g, "\\$&").replace(/0/g, "\\d+") + "$"));
+      new URL(url.template.replace(/\{pr\}/g, "0"));
+      const esc = (x) => x.replace(/[.+^$()|[\]\\*?]/g, "\\$&");
+      patterns.push(new RegExp("^" + url.template.replace(/^[a-z]+:\/\//, "").split("/")[0].split("{pr}").map(esc).join("\\d+") + "$"));
     } catch { /* an unparsable template checks nothing */ }
   }
   if (!patterns.length) return `environments.${envName}.url has no host_pattern or template to check ${u.host} against`;
@@ -115,7 +116,8 @@ export function handle(root, verifyDir, { envFile = process.env.AW_TEST_USER_ENV
   try { renameSync(marker, running); } catch { return null; } // another hook took it
   const write = (status, reason, extra = {}) => {
     const r = { status, reason, at: new Date().toISOString(), ...extra };
-    writeFileSync(join(verifyDir, RESULT), JSON.stringify(r) + "\n");
+    writeFileSync(join(verifyDir, RESULT + ".tmp"), JSON.stringify(r) + "\n");
+    renameSync(join(verifyDir, RESULT + ".tmp"), join(verifyDir, RESULT));
     rmSync(running, { force: true });
     return r;
   };
@@ -133,9 +135,10 @@ export function handle(root, verifyDir, { envFile = process.env.AW_TEST_USER_ENV
   const bad = urlProblem(req.env, envCfg, req.url);
   if (bad) return write("failed", `url refused: ${bad}`, { env: req.env });
 
-  const envPath = join(root, envFile);
+  const envPath = isAbsolute(envFile) ? envFile : join(root, envFile);
   if (!existsSync(envPath)) return write("failed", `no ${envFile}`, { env: req.env });
-  if (!gitIgnored(root, envFile)) return write("failed", `${envFile} is not gitignored; refusing to read it`, { env: req.env });
+  const inRepo = !relative(root, envPath).startsWith("..");
+  if (inRepo && !gitIgnored(root, relative(root, envPath))) return write("failed", `${envFile} is not gitignored; refusing to read it`, { env: req.env });
   const creds = parseDotenv(readFileSync(envPath, "utf8"));
 
   const state = envCfg.auth?.storage_state ? join(root, envCfg.auth.storage_state) : null;
@@ -143,7 +146,7 @@ export function handle(root, verifyDir, { envFile = process.env.AW_TEST_USER_ENV
   const timeout = (Number(refresh.timeout_seconds) || 300) * 1000;
   const run = spawnSync("sh", ["-c", String(refresh.command)], {
     cwd: root, timeout, encoding: "utf8",
-    env: { ...process.env, ...creds, PREVIEW_URL: req.url, AUTH_STORAGE_STATE: process.env.AUTH_STORAGE_STATE ?? envCfg.auth?.storage_state ?? "" },
+    env: { ...process.env, ...creds, PREVIEW_URL: req.url, AUTH_STORAGE_STATE: envCfg.auth?.storage_state ?? "" },
   });
   const secrets = Object.values(creds);
   writeFileSync(join(verifyDir, LOG), redact(`$ refresh.command (env ${req.env}, ${req.url})\n${run.stdout ?? ""}${run.stderr ?? ""}\nexit ${run.status ?? run.signal}\n`, secrets));
@@ -248,10 +251,17 @@ async function selfTest() {
     t("--wait while the hook runs: bounded by the timeout", (await waitFor(vd, 0.3)).includes("no result after"));
     rmSync(join(vd, RUNNING), { force: true });
     t("a marker already taken is skipped", handle(dir, vd) === null);
+    const outside = mkdtempSync(join(tmpdir(), "login-hook-env-"));
+    writeFileSync(join(outside, "env"), "TESTING_USERNAME=e2e@x.dev\nTESTING_PASSWORD='s3cret pw'\n");
+    mark({ env: "preview", url: "https://shop-git-feat-x.vercel.app" });
+    for (const r of runHook(dir, { envFile: join(outside, "env") })) t("an absolute env file outside the checkout is used as is", r.status === "ok");
+    rmSync(outside, { recursive: true, force: true });
 
     t("dotenv: export, quotes, comments", JSON.stringify(parseDotenv("export A=1\nB=\"x y\" \nC=z # note\n# D=4\n")) === JSON.stringify({ A: "1", B: "x y", C: "z" }));
     t("template host check", urlProblem("preview", { url: { template: "https://shop-pr-{pr}.vercel.app" } }, "https://shop-pr-42.vercel.app") === null
       && urlProblem("preview", { url: { template: "https://shop-pr-{pr}.vercel.app" } }, "https://shop-pr-x.vercel.app") !== null);
+    t("template: only the {pr} slot is a number", urlProblem("preview", { url: { template: "https://preview-10-{pr}.x.dev" } }, "https://preview-1999-3.x.dev") !== null
+      && urlProblem("preview", { url: { template: "https://preview-10-{pr}.x.dev" } }, "https://preview-10-3.x.dev") === null);
     t("no pattern at all: refused", urlProblem("preview", { url: { from: "pr-deployment" } }, "https://a.vercel.app") !== null);
   } finally {
     rmSync(dir, { recursive: true, force: true });

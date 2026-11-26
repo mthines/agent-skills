@@ -191,6 +191,7 @@ The hook, [`scripts/login-hook.mjs`](../scripts/login-hook.mjs), runs after ever
    | `LOGIN: failed — <reason>` | `blocked (auth: <reason>)` plus the `!` command; a `url refused` reason means the URL is not this environment's (fix the URL, never the config) |
 
 3. **What the hook does.** It runs `environments.<env>.auth.refresh.command` from the committed config, from the checkout root, with the variables of `.agents/aw/.env.test-user` and `PREVIEW_URL` in that command's environment only.
+   `host_pattern` (or `url.template`) is now where the credentials may go, so it must name hosts only your deployments can hold: `dash0-git-[a-z0-9-]+\.dash0-preview\.com`, never a shared suffix such as `[a-z0-9-]+\.vercel\.app` that anyone can register a project under.
    It refuses, before running anything, a URL whose host does not match the environment's `url.comment.host_pattern` or `url.template` (a preview) or whose origin is not its `url` (local), and an env file that `git check-ignore` does not ignore.
    It writes `verify/login-result` (status and reason, never a value) and `verify/login-hook.log` with every credential value replaced by `***`, checks the `storage_state` file was rewritten, and removes the marker.
 
