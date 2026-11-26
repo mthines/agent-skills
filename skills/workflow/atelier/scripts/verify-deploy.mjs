@@ -56,7 +56,8 @@ export function planVerify({ body, hosted }) {
 	const { contract, error } = parseContract(body || "");
 	if (error) {
 		const opt = optOut(body);
-		return { action: "skip", reason: opt ? `deployment-verify:none — ${opt.reason || "no reason given"}` : "no deployment-verify:v1 contract on the PR" };
+		if (opt) return { action: "skip", reason: `deployment-verify:none — ${opt.reason || "no reason given"}` };
+		return { action: "skip", reason: error.startsWith("no contract") ? "no deployment-verify:v1 contract on the PR" : `the deployment-verify:v1 contract does not parse (${error})` };
 	}
 	if (contract?.flag) return { action: "skip", reason: `flag ${contract.flag.key ?? "(no key)"}: a human steps it with /deployment-verify` };
 	return { action: "run", reason: "before/after contract" };
@@ -124,6 +125,7 @@ function selfTest() {
 	t("plan: a flag contract is skipped, naming the flag", /flag f: a human/.test(planVerify({ body: contract({ flag: { key: "f" } }), hosted: true }).reason));
 	t("plan: an opt-out is skipped with its reason", planVerify({ body: "<!-- deployment-verify:none — docs only -->", hosted: true }).reason === "deployment-verify:none — docs only");
 	t("plan: no contract is skipped", planVerify({ body: "nothing", hosted: true }).action === "skip");
+	t("plan: a contract that does not parse says so", /does not parse/.test(planVerify({ body: contract({}).replace('"service"', "service"), hosted: true }).reason));
 	t("plan: a repo with no hosted service is skipped", planVerify({ body: contract({}), hosted: false }).action === "skip");
 
 	// The run itself, with gh and tick.mjs stubbed.
