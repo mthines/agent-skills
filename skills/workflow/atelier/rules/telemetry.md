@@ -30,7 +30,7 @@ The scripts record it; [`scripts/telemetry.mjs`](../scripts/telemetry.mjs) is th
 | gate decision, `refused_by`, `user_visible`, `has_flag_contract` | `merge-gate.mjs` |
 | a stage's decision; the next stage opens; a run-ending decision exports the run | `state.mjs --record` |
 | outcome sweep counts; one `atelier.outcome` span per changed outcome | `outcomes.mjs` |
-| the open run's state as one `atelier.run.state` gauge point, at each boundary above and at the start and end of every `wait` | `emitState` in `telemetry.mjs`; a run that ends exports it with its trace |
+| the open run's state as one `atelier.run.state` gauge point, at each run boundary above (not the outcome sweep) and at the start and end of every `wait` | `emitState` in `telemetry.mjs`; a run that ends exports it with its trace |
 
 The ledger is `<git common dir>/atelier-telemetry/telemetry.jsonl`, shared by every worktree of the clone; set `ATELIER_RUN_DIR` to give a concurrent second run in the same clone its own.
 Telemetry writes only to the ledger and stderr, never to stdout, and never changes a script's exit code.
