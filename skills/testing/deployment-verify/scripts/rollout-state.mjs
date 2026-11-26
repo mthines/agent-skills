@@ -3,9 +3,9 @@
 // tick.mjs calls emitRollout() after it writes the PR comment; export is opt-in and never changes a tick's outcome.
 //   node rollout-state.mjs --self-test
 
-import { existsSync, realpathSync } from "node:fs";
+import { existsSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -171,7 +171,11 @@ async function selfTest() {
 			&& (await emitRollout({ prev: null, next: first, pr: { number: 1 }, env })) === null && received.length === before);
 		const dead = await emitRollout({ prev: null, next: first, pr, env: { ATELIER_OTLP_ENDPOINT: "http://127.0.0.1:1" } });
 		t("a dead backend is not a failure", dead === null || dead.exported === false);
-		t("a missing otlp.mjs is not a failure", (await emitRollout({ prev: null, next: first, pr, env: { ...env, DEPLOYMENT_VERIFY_OTLP_MJS: "/nope.mjs" } })).exported === true, "falls back to the checkout copy");
+		t("a DEPLOYMENT_VERIFY_OTLP_MJS that does not exist falls back to the checkout copy", (await emitRollout({ prev: null, next: first, pr, env: { ...env, DEPLOYMENT_VERIFY_OTLP_MJS: "/nope.mjs" } })).exported === true);
+		const broken = join(mkdtempSync(join(tmpdir(), "rollout-state-")), "otlp.mjs");
+		writeFileSync(broken, 'throw new Error("encoder failed to load");\n');
+		const before2 = received.length;
+		t("an encoder that fails to load is not a failure: nothing sent, null returned", (await emitRollout({ prev: null, next: first, pr, env: { ...env, DEPLOYMENT_VERIFY_OTLP_MJS: broken } })) === null && received.length === before2);
 	} finally {
 		server.close();
 	}
