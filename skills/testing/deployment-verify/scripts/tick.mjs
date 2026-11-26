@@ -1653,7 +1653,9 @@ async function main() {
 			invalid ||= validateContract(contract, cfg) || flipFollowUp(contract, cfg) || (holdCheckDue(store.read()) ? checkHoldReachable(contract, cfg) : null);
 			if (invalid) {
 				const s = { phase: "done", outcome: "STOPPED", reason: invalid, env: cfg.env, steps: [] };
+				const prev = store.read();
 				store.write(renderReport(s, contract || {}, store.pr));
+				await emitRollout({ prev, next: s, pr: store.pr, slug });
 				store.finish();
 				console.log(statusLine(s, store.pr));
 				continue;

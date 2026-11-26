@@ -213,4 +213,4 @@ A pr-reviewer or other skill's trace started during a run joins by PR and time: 
 
 [`dashboards/atelier.json`](../dashboards/atelier.json) is a Perses dashboard: the pipeline now (in-flight runs by stage and state, recently ended runs with their reason), the rollout after the merge (`deployment.rollout.state`, written by `deployment-verify`), throughput, bottlenecks (stage time, active vs waiting), why runs stop (holds, companions, preflight, outcomes), and memory.
 Import it in Dash0 under Dashboards → Create → Import (paste the JSON), or apply it as a `PersesDashboard` resource through the Dash0 operator; never edit it from a run.
-Import it into the dataset the export targets (`Dash0-Dataset` in `ATELIER_OTLP_HEADERS` or `PR_REVIEWER_OTLP_HEADERS`) on the Dash0 instance that endpoint belongs to.
+Import it into the dataset the export targets (`Dash0-Dataset` in `ATELIER_OTLP_HEADERS`, `PR_REVIEWER_OTLP_HEADERS`, or `OTEL_EXPORTER_OTLP_HEADERS` under `ATELIER_TELEMETRY=on`) on the Dash0 instance that endpoint belongs to.
