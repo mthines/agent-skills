@@ -64,6 +64,21 @@ Read recent PRs' deployments and bot comments (`gh api repos/{owner}/{repo}/depl
 Propose `ui.yml` `surface` only when `ui-verify`'s `is-ui-diff.mjs` defaults would be wrong:
 plain `.ts`/`.js` are UI in a frontend-only repo; only some monorepo packages are UI; components live in a non-default directory.
 
+A monorepo where only some packages are UI writes `surface.include` **and `mode: replace`**.
+Without `mode: replace` the defaults still apply next to `include`, and a backend package whose path has a default UI segment (`components/`, `app/`, `pages/`) reads as UI, so the merge gate asks for a browser spec the change cannot have.
+After writing the surface, check it on a changed backend path:
+
+```bash
+node "$UI_VERIFY_DIR/scripts/is-ui-diff.mjs" --files "<a backend .ts path>" --surface-json '<the surface as JSON>'   # must end with UI_DIFF: no
+```
+
+```yaml
+# ✗ a monorepo surface that still counts components/<backend>/src/x.ts as UI
+surface: { include: ['components/ui/**'] }
+# ✓ only the listed paths are UI
+surface: { mode: replace, include: ['components/ui/**'] }
+```
+
 ### A7 — Telemetry
 
 | Evidence | Backend |

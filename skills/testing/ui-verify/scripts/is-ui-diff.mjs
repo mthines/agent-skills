@@ -242,6 +242,12 @@ function selfTest() {
     !classify(["legacy/components/Old.tsx"], { exclude: ["legacy/**"] }).isUI);
   t("`include` is an alias for globs",
     classify(["apps/web/page.ts"], { mode: "replace", include: ["apps/web/**"] }).isUI);
+  t("include without mode still extends defaults: a backend .ts under components/ reads as UI",
+    classify(["components/agents/src/tool.ts"], { include: ["components/ui/**"] }).isUI);
+  t("include with mode replace: only the listed paths are UI",
+    !classify(["components/agents/src/tool.ts"], { mode: "replace", include: ["components/ui/**"] }).isUI);
+  t("include with mode replace still counts the listed UI path",
+    classify(["components/ui/src/a.ts"], { mode: "replace", include: ["components/ui/**"] }).isUI);
   t("source is 'default' with no surface", classify(["a.tsx"]).source === "default");
   t("source names the surface when given",
     classify(["a.tsx"], { dirs: ["x"] }).source.startsWith("surface"));
