@@ -1,0 +1,5 @@
+# Fixture for verify-env.mjs --tier: only its existence is read.
+version: 1
+environments:
+  local:
+    url: http://localhost:3000
