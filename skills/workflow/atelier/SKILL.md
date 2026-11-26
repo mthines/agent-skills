@@ -64,6 +64,7 @@ The setup skills it calls ask the user questions, so it runs interactively only:
 | no `.agents/aw/tracker.yml` | `SETUP: Skill("ticket", "setup") — fixes tracker (…)` |
 | `ci-on-draft` | `MANUAL: ci-on-draft — <the workflows that skip drafts> — <the fix>` |
 | `flag-provider` with `release.yml` → `providers: []` | `DECIDED: flag-provider — …`: an answer, not missing setup; never delegated, never under `Needs you:` |
+| `merge.yml` → `protection: "<why>"` | `DECIDED: merge-protection — <why> …`: the repo's answer on a merge queue and required checks (a user-owned repo cannot have a queue; a required-checks rule can block the release job's own push); never a gap, never delegated, and never a reason to propose one |
 
 ```text
 ✗ release.yml declares providers: [] → Skill("deployment-verify", "setup") on every /atelier setup   # it cannot invent a provider

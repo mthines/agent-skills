@@ -74,6 +74,8 @@ A gap blocks only when a stated criterion depends on it, because most runs need 
 Its line rides in the state comment so a reviewer reading the PR sees what the run could not prove.
 
 A gap a repo will always have (no flag system, no browser sign-in) is an answer, not missing setup, and repeating it on every run trains readers to skip the line.
+The same holds for merge protection: whether a repo can have a merge queue or required checks depends on facts preflight cannot read offline (the owner type, the ruleset, whether the release job pushes to the default branch with a token a ruleset cannot exempt).
+So a repo that learned its answer writes it once as `protection:` in `.agents/aw/merge.yml`, and preflight shows it on every run and prints it as `DECIDED` in setup, instead of reading GitHub.
 `.agents/aw/preflight.yml` records that answer once, with a reason, in a committed file a reviewer can read; the line then names only new gaps, and an accepted one stays visible after them.
 Accepting a gap never makes a criterion provable, so a stated criterion that needs it still blocks.
 
