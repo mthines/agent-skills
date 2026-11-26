@@ -151,7 +151,8 @@ No stable element → omit it; the run falls back to "URL is not the login page"
 
 ## The agent reads a session; it does not type the login
 
-The fixture test user's login is run by the user (`!` command) or a scheduler, never by the agent, unless the personal config sets `sign_in_host` for that environment ([below](#pre-authorized-sign-in)). A missing or expired state file → `blocked (auth: <state_file> expired)` plus the command below; after the user runs it, check the file's modified time changed and `authed_check` is visible.
+The fixture test user's login is run by the [login hook](#the-login-hook-autonomous-sign-in), the user (`!` command), or a scheduler, never typed by the agent, unless the personal config sets `sign_in_host` for that environment ([below](#pre-authorized-sign-in)).
+A missing or expired state file, or `refresh.when: always` → ask the hook first; only when it prints `LOGIN: no-hook` or `LOGIN: failed — …` is the run `blocked (auth: <state_file> expired)` plus the command below; after the user runs it, check the file's modified time changed and `authed_check` is visible.
 
 ```text
 ! cd <repo> && AUTH_CREDENTIALS_PROVIDER=<provider> AUTH_CREDENTIALS_ITEM="<item>" AUTH_LOGIN_URL="<login_url>" AUTH_STORAGE_STATE=<state_file> AUTH_POST_LOGIN_URL_PATTERN='^(?!.*/sign-in)' node .agents/aw/scripts/auth/login-credentials.mjs
@@ -164,6 +165,75 @@ The fixture test user's login is run by the user (`!` command) or a scheduler, n
 
 **Google SSO:** scripted Google logins are blocked. Use a password-capable test account against the app's own form, or a pre-captured state a human refreshes on a schedule; with neither, authed specs are `skipped` with the reason — never a faked pass.
 Never put a real person's credentials in CI.
+
+## The login hook (autonomous sign-in)
+
+A run that needs a fresh session asks a Claude Code hook to sign in, so no human waits and the agent never holds a credential.
+The hook, [`scripts/login-hook.mjs`](../scripts/login-hook.mjs), runs after every Bash or Write call; it does nothing unless a marker exists.
+
+1. **Ask.** In one Bash call, clear the last result and write the marker with the environment and its resolved URL:
+
+   ```bash
+   V=".agent/$(git branch --show-current)/verify"; mkdir -p "$V"; rm -f "$V/login-result"
+   printf '{"env":"preview","url":"%s"}\n' "$PREVIEW_URL" > "$V/needs-login"
+   ```
+
+2. **Wait, bounded.** The hook runs synchronously when that call returns, so the next call reads its result; the wait covers a hook still running in another session:
+
+   ```bash
+   node "${AW_VERIFY_DIR:-$HOME/.claude/skills/aw-verify}/scripts/login-hook.mjs" --wait "$V" --timeout <auth.refresh.timeout_seconds + 60>
+   ```
+
+   | Last line | Do |
+   | --- | --- |
+   | `LOGIN: ok` | The `storage_state` file was rewritten by this login; confirm `authed_check` and continue |
+   | `LOGIN: no-hook — …` | No hook picked the marker up (it is removed): the `!` command below, as before |
+   | `LOGIN: failed — <reason>` | `blocked (auth: <reason>)` plus the `!` command; a `url refused` reason means the URL is not this environment's (fix the URL, never the config) |
+
+3. **What the hook does.** It runs `environments.<env>.auth.refresh.command` from the committed config, from the checkout root, with the variables of `.agents/aw/.env.test-user` and `PREVIEW_URL` in that command's environment only.
+   `host_pattern` (or `url.template`) is now where the credentials may go, so it must name hosts only your deployments can hold: `dash0-git-[a-z0-9-]+\.dash0-preview\.com`, never a shared suffix such as `[a-z0-9-]+\.vercel\.app` that anyone can register a project under.
+   It refuses, before running anything, a URL whose host does not match the environment's `url.comment.host_pattern` or `url.template` (a preview) or whose origin is not its `url` (local), and an env file that `git check-ignore` does not ignore.
+   It writes `verify/login-result` (status and reason, never a value) and `verify/login-hook.log` with every credential value replaced by `***`, checks the `storage_state` file was rewritten, and removes the marker.
+
+**The agent never reads `.agents/aw/.env.test-user`**: no `cat`, `Read`, `grep`, `source`, or `env` dump of it, and it never prints, echoes, or writes a value from it.
+Only the hook reads it. A run that needs its contents has the wrong design: write the marker instead.
+
+```text
+✗ source .agents/aw/.env.test-user && node .agents/aw/scripts/auth/login-credentials.mjs   # the values land in the agent's shell and transcript
+✓ write needs-login → login-hook.mjs --wait → LOGIN: ok
+```
+
+### Install the hook (once per machine)
+
+The repo keeps the credentials in `.agents/aw/.env.test-user` (gitignored; add `.agents/aw/.env.test-user` to `.gitignore` first):
+
+```bash
+TESTING_USERNAME=e2e@example.com
+TESTING_PASSWORD=<the fixture test user's password>
+```
+
+Reference them in `refresh.command`, e.g. `E2E_EMAIL="$TESTING_USERNAME" E2E_PASSWORD="$TESTING_PASSWORD" … node .agents/aw/scripts/auth/login-credentials.mjs`.
+A new worktree needs the file too: copy it with the repo's worktree setup (it copies ignored config), or set `AW_TEST_USER_ENV_FILE` in the hook command to an absolute path.
+Then paste into `~/.claude/settings.json` (all repos) or the repo's `.claude/settings.local.json`; `timeout` must exceed the longest `refresh.timeout_seconds`:
+
+```json
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Bash|Write",
+        "hooks": [
+          { "type": "command", "command": "node \"$HOME/.claude/skills/aw-verify/scripts/login-hook.mjs\"", "timeout": 600 }
+        ]
+      }
+    ]
+  }
+}
+```
+
+The user installs it; an agent never edits its own hook settings.
+Only a fixture or e2e test user goes in the file, never a real person's account; with no file the hook reports `LOGIN: failed — no .agents/aw/.env.test-user`.
+
 
 ## Pre-authorized sign-in
 

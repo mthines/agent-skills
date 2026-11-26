@@ -180,6 +180,25 @@ Never write `checks.yaml` or `checks.lock` on Lite: `checks.lock` is what marks 
 
 Lite proves every change before the PR: a UI change in the browser, the same way Full Step 4.1 does, and any other change by recorded test runs.
 
+Route first: `node "${AW_VERIFY_DIR:-$HOME/.claude/skills/aw-verify}/scripts/verify-env.mjs" --base origin/<base>` reads the repo's path rules (`ui.yml` → `verify:`, aw-verify's `rules/config.md`); its last line picks the step.
+
+| `VERIFY_ENV:` | Run |
+| --- | --- |
+| `none` (no `verify:` block) | steps 0–4 as written, routed by `is-ui-diff.mjs` |
+| `checks …` | step 0, whatever `is-ui-diff.mjs` says |
+| `local before-pr` | a UI diff (`is-ui-diff.mjs` prints `UI_DIFF: yes`): step 1 (step 3 when `environments.yml` is missing); no UI file: step 0, since a browser run has nothing to look at |
+| `preview before-pr` | step 0 for the PR's criteria, then the after-PR preview run below: a preview only exists once the PR does |
+| `preview after-pr` / `local after-pr` | step 0 before the PR; after Phase 6 opens it, the after-PR run below (`local after-pr` on a diff with no UI file: step 0 only) |
+
+**After-PR run.** Once `create-pr` returns the URL, wait for the preview deployment (aw-verify's `rules/config.md` → `environments.preview.url`), then `Skill("aw-verify", "run preview <pr-url>")` (`run local <pr-url>` for `local after-pr`); a stale session signs in through the login hook (aw-verify's `rules/auth.md`).
+It replaces the checks-mode aggregate on the PR, so gate on its report: `verify-comment.mjs --pr <pr-url> --check --ui --browser` (drop `--browser` for `local`) must print `report complete`; `--ui` checks the `ui-verify` spec block, which `create-pr` Step 6.4 writes on every UI diff.
+A failed criterion or `❌ not verified` re-enters Phase 3 under the same turn cap and pushes to the same PR; a preview that never deploys, or `LOGIN: failed`, goes under `Needs you:` with the reason, and the PR keeps the checks-mode report.
+
+```text
+✗ Wrong — rule says preview after-pr, Lite runs local before the PR and stops
+✓ Right — checks mode → create-pr → preview deploys → aw-verify run preview <pr-url> → --check --ui --browser: report complete
+```
+
 0. No UI file in the diff (`ui-verify`'s `is-ui-diff.mjs` prints `UI_DIFF: no`) → `Skill("aw-verify", "run checks --no-push --no-comment")` (aw-verify's `rules/checks-mode.md`): each AC's command before on the base and after on the branch, rendered into `.agent/<branch>/verify/`.
    Continue only after `verify-comment.mjs --check --local .agent/<branch>/verify` prints `local report complete`; a failed criterion re-enters Phase 3 under the same turn cap.
 1. A UI diff and `.agents/aw/environments.yml` exists → `Skill("aw-verify", "run local --no-push --no-comment --foreign-stack abort")`.

@@ -6,3 +6,8 @@ screenshots: true
 recording: true
 constraints: { parallelism: 1, reset_between_specs: false }
 adversarial: { enabled: true, max_probes: 24, time_budget_minutes: 10 }
+# Which environment proves a diff, and when (rules/config.md § verify). Absent → today's routing.
+# verify:
+#   rules:
+#     - { paths: ['apps/web/**'], env: preview, when: after-pr }   # first rule covering every changed file wins
+#   default: { env: checks }                                        # no rule matched; no paths needed

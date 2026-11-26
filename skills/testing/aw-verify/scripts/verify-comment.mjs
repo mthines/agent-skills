@@ -24,6 +24,7 @@
 //   node verify-comment.mjs --pr <n|url> --section intent --marks '{"AC-1":{"status":"✅"},"AC-2":{"prod":true}}'
 //     changes only the leading status / 🚀 of existing criteria lines (a JSON string or a file); never their text
 //   node verify-comment.mjs --pr <n|url> --check [--ui] [--proven]   (--proven, the merge's gate: also refuse a ❌ criterion or a ❌/⛔ verdict)
+//     [--browser]   also refuse a PR whose report is not a browser run on the preview at its head (a path rule's env: preview)
 //   the end-of-run gate: exit 1 lists what the PR report lacks (intent ticked, aggregate in the template shape, ui spec block)
 //   node verify-comment.mjs --pr <n|url> --from-plan <plan.md> [--statuses <json|file>]
 //     publishes an `/aw` brief's criteria as the intent region (rows ⬜, or ticked from run-checks.mjs --statuses);
@@ -718,6 +719,19 @@ export function provenProblems(prBody, comments = [], { head = null } = {}) {
   return problems;
 }
 
+// `--browser`: the PR holds a browser run on the preview for its head, not only recorded test runs. A path
+// rule (verify-env.mjs) that says `env: preview` needs this; a checks-only or local report does not satisfy it.
+export function browserProblems(prBody, comments = [], { head = null } = {}) {
+  const agg = parseRegions(bodyBlock(prBody) || comments.find((c) => c.startsWith(MARKER)) || "").get("aggregate");
+  if (!agg) return ["no browser report: run aw-verify run preview <pr-url>"];
+  const sub = (agg.split("\n").find((l) => l.includes("<sub>")) || "").replace(/<\/?sub>/g, "");
+  const env = sub.split(" · ").map((f) => f.trim()).find((f) => !HEX.test(f)) || "";
+  if (env !== "preview") return [`no browser report on the preview: the report ran ${env || "with no environment named"}; run aw-verify run preview <pr-url>`];
+  const sha = shaOf(agg);
+  if (head && head.length >= 7 && sha !== head.slice(0, 7)) return [`the browser report ran on ${sha ?? "no named commit"}; the PR head is ${head.slice(0, 7)}: run aw-verify run preview <pr-url>`];
+  return [];
+}
+
 // The rules both gates share. `rows` are the parsed criteria (null: none published), `report` the rendered
 // report (null: none). Every AC has a final status and a proof kind; a `ui:` AC is never ⏭️ under a ✅ verdict
 // (a criterion with no UI path is tagged api:, worker:, or check, never ui:); the report opens with a
@@ -1098,6 +1112,12 @@ function selfTest() {
     assert(provenProblems(body(part)).some((p) => p.includes("Blocked")), "proven: a ⛔ verdict is not proven");
     assert(provenProblems(body(ok)).length === 0 && provenProblems(body(skip)).length === 0, "proven: ✅ and ⚠️ are proven");
     assert(provenProblems(body(ok), [], { head: "abcdef1999" }).length === 0, "proven: a report on the live head is proven");
+    const browser = (env, sha = "abcdef1") => withBlock("t", splice(splice("", "intent", ok.intent), "aggregate", `## ✅ Verified — x\n\n<sub>\`${sha}\` · ${env} · 0 findings · updated now</sub>\n\n<details><summary>Details</summary>\n\nlong hidden text that goes past forty characters easily\n\n</details>`));
+    assert(browserProblems(browser("preview"), [], { head: "abcdef1999" }).length === 0, "browser: a preview run on the head passes");
+    assert(browserProblems(body(ok), [], { head: "abcdef1999" }).some((p) => p.includes("checks-only")), "browser: a checks-only report is not a browser run");
+    assert(browserProblems(browser("local"), [], { head: "abcdef1999" }).some((p) => p.includes("local")), "browser: a local run is not a preview run");
+    assert(browserProblems(browser("preview", "1234567"), [], { head: "abcdef1999" }).some((p) => p.includes("1234567")), "browser: a preview run on an older commit is not proof of the head");
+    assert(browserProblems("no report here").some((p) => p.includes("no browser report")), "browser: no aggregate fails");
     assert(provenProblems(body(ok), [], { head: "1234567aaa" }).some((p) => p.includes("abcdef1") && p.includes("1234567")), "proven: a report on an older commit is not proof of the head");
     assert(provenProblems(body(skip), [], { head: "1234567aaa" }).some((p) => p.includes("names no commit")), "proven: a report with no commit cannot be tied to the head");
     // --run: provenance shows in the report; the runner reads real exit codes in a real repo.
@@ -1160,7 +1180,7 @@ function selfTest() {
 
 // Every flag the CLI reads; an unknown one exits 1, so a renamed flag fails loudly instead of being ignored.
 export const FLAGS = ["--pr", "--repo", "--section", "--file", "--replace-all", "--to", "--dry-run", "--existing", "--seed",
-  "--head", "--notice-out", "--comment-url", "--marks", "--from-plan", "--statuses", "--print", "--self-test", "--check", "--ui", "--no-upload", "--local", "--checks", "--proven", "--run", "--base", "--test-files", "--out"];
+  "--head", "--notice-out", "--comment-url", "--marks", "--from-plan", "--statuses", "--print", "--self-test", "--check", "--ui", "--no-upload", "--local", "--checks", "--proven", "--browser", "--run", "--base", "--test-files", "--out"];
 const args = process.argv.slice(2);
 const opt = (k) => { const i = args.indexOf(k); return i === -1 ? undefined : args[i + 1]; };
 const has = (k) => args.includes(k);
@@ -1227,10 +1247,10 @@ else if (isMain) {
       const slug = opt("--repo") || checkPr.match(/github\.com\/([^/]+\/[^/]+)\/pull\//)?.[1] || gh(["repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"]);
       const body = Buffer.from(gh(["api", `repos/${slug}/pulls/${num}`, "--jq", ".body // \"\" | @base64"]).trim(), "base64").toString("utf8");
       const comments = gh(["api", `repos/${slug}/issues/${num}/comments`, "--paginate", "--jq", ".[] | (.body | @base64)"]).split("\n").filter(Boolean).map((b) => Buffer.from(b, "base64").toString("utf8")).reverse();
-      const liveHead = has("--proven") ? gh(["api", `repos/${slug}/pulls/${num}`, "--jq", ".head.sha"]).trim() : null;
-      const problems = [...checkReport(body, comments, { ui: has("--ui") }), ...(has("--proven") ? provenProblems(body, comments, { head: liveHead }) : [])];
+      const liveHead = has("--proven") || has("--browser") ? gh(["api", `repos/${slug}/pulls/${num}`, "--jq", ".head.sha"]).trim() : null;
+      const problems = [...checkReport(body, comments, { ui: has("--ui") }), ...(has("--proven") ? provenProblems(body, comments, { head: liveHead }) : []), ...(has("--browser") ? browserProblems(body, comments, { head: liveHead }) : [])];
       if (problems.length) { console.error(`verify-comment: the PR's report is incomplete:\n${problems.map((p) => `  - ${p}`).join("\n")}`); process.exit(1); }
-      console.log("report complete: intent region ticked, aggregate in the template shape" + (has("--ui") ? ", ui-verify spec present" : "") + (has("--proven") ? ", every criterion proven" : ""));
+      console.log("report complete: intent region ticked, aggregate in the template shape" + (has("--ui") ? ", ui-verify spec present" : "") + (has("--proven") ? ", every criterion proven" : "") + (has("--browser") ? ", browser run on the preview at the head" : ""));
       process.exit(0);
     }
     const fromPlan = opt("--from-plan");

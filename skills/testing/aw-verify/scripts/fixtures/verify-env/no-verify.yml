@@ -1,0 +1,5 @@
+# Fixture for verify-env.mjs: a ui.yml with no verify block keeps today's routing.
+version: 1
+surface:
+  include: ['apps/web/**']
+driver: auto
