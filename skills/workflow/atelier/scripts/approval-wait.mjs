@@ -45,12 +45,38 @@ function sameSha(a, b) {
 	return n >= 7 && a.slice(0, n) === b.slice(0, n);
 }
 
+// `.agents/aw/merge.yml` `sensitive_paths`: globs for files whose change atelier never merges by itself.
+// `**` crosses folders, `*` and `?` stay inside one; a pattern with no `/` matches at any depth, like .gitignore.
+export function globToRegExp(glob) {
+	const g = String(glob).replace(/^\.?\//, "");
+	let re = "";
+	for (let i = 0; i < g.length; i++) {
+		const c = g[i];
+		if (c === "*" && g[i + 1] === "*") {
+			re += g[i + 2] === "/" ? "(?:.*/)?" : ".*";
+			i += g[i + 2] === "/" ? 2 : 1;
+		} else if (c === "*") re += "[^/]*";
+		else if (c === "?") re += "[^/]";
+		else re += c.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+	}
+	const trailing = g.endsWith("/") ? ".*" : "(?:/.*)?";
+	return new RegExp(`^${g.includes("/") ? "" : "(?:.*/)?"}${re}${trailing}$`);
+}
+
+export function sensitiveHits(paths, globs) {
+	const res = globs.map(globToRegExp);
+	return paths.filter((p) => res.some((r) => r.test(p)));
+}
+
 // One `gh pr view --json state,reviewDecision,headRefOid,statusCheckRollup` object → { state, reason, head }.
 // `state` is approved | manual | pending | merged. Pure: no I/O, no clock; `sinceStartMs` feeds the grace only.
-export function classify(pr, { checks = [], sinceStartMs = 0, graceMs = START_GRACE_MINUTES * 60_000 } = {}) {
+export function classify(pr, { checks = [], sinceStartMs = 0, graceMs = START_GRACE_MINUTES * 60_000, sensitivePaths = [] } = {}) {
 	const head = pr.headRefOid ?? null;
 	const out = (state, reason) => ({ state, reason, head });
 	if (pr.state === "MERGED") return out("merged", "the PR is merged");
+	// A change to a sensitive path is never merged by atelier, whatever approved it: a person merges it.
+	const hits = sensitiveHits((pr.files ?? []).map((f) => f.path ?? f), sensitivePaths);
+	if (hits.length) return out("manual", `the PR changes sensitive paths (${hits.slice(0, 3).join(", ")}${hits.length > 3 ? `, +${hits.length - 3} more` : ""}), which atelier never merges: a person has to review and merge`);
 	if (pr.reviewDecision === "APPROVED") return out("approved", "the review decision is APPROVED");
 	if (pr.reviewDecision === "CHANGES_REQUESTED") return out("manual", "changes were requested: a person has to review");
 	if (!pr.reviewDecision) return out("approved", "no review is required");
@@ -85,7 +111,9 @@ export async function loadApprovalConfig(repoDir) {
 	const path = join(repoDir, ".agents", "aw", "merge.yml");
 	if (!existsSync(path)) return {};
 	const { parseYaml } = await import(pathToFileURL(join(skillDir("deployment-verify", "testing", "DEPLOYMENT_VERIFY_DIR"), "scripts", "yaml-lite.mjs")).href);
-	const a = parseYaml(readFileSync(path, "utf8"))?.approval ?? {};
+	const doc = parseYaml(readFileSync(path, "utf8")) ?? {};
+	const a = doc.approval ?? {};
+	const sensitive = (Array.isArray(doc.sensitive_paths) ? doc.sensitive_paths : doc.sensitive_paths ? [doc.sensitive_paths] : []).map(String);
 	const list = Array.isArray(a.wait_for) ? a.wait_for : a.wait_for ? [a.wait_for] : [];
 	const number = (v, label) => {
 		if (v === undefined || v === null) return undefined;
@@ -93,7 +121,7 @@ export async function loadApprovalConfig(repoDir) {
 		if (!Number.isFinite(n) || n < 0) throw new Error(`.agents/aw/merge.yml approval.${label} must be a non-negative number, got ${v}`);
 		return n;
 	};
-	return { waitFor: list.map(String), maxWaitMinutes: number(a.max_wait_minutes, "max_wait_minutes"), startGraceMinutes: number(a.start_grace_minutes, "start_grace_minutes") };
+	return { ...(sensitive.length ? { sensitivePaths: sensitive } : {}), waitFor: list.map(String), maxWaitMinutes: number(a.max_wait_minutes, "max_wait_minutes"), startGraceMinutes: number(a.start_grace_minutes, "start_grace_minutes") };
 }
 
 // Every `--check <regex>` on the command line, in order (parseArgs keeps only the last).
@@ -138,7 +166,7 @@ function minutes(value, fallback, label) {
 }
 
 function readPr(pr) {
-	const text = execFileSync("gh", ["pr", "view", pr, "--json", "state,reviewDecision,headRefOid,statusCheckRollup"], { encoding: "utf8" });
+	const text = execFileSync("gh", ["pr", "view", pr, "--json", "state,reviewDecision,headRefOid,statusCheckRollup,files"], { encoding: "utf8" });
 	return JSON.parse(text);
 }
 
@@ -152,6 +180,15 @@ async function selfTest() {
 	const DP = [/darkplane auto-approval/i];
 	const cls = (p, o = {}) => classify(p, { checks: DP, ...o });
 
+	const sens = ["secrets/**", "**/*.pem", ".github/workflows/"];
+	const withFiles = (paths, over = {}) => pr({ reviewDecision: "", files: paths.map((path) => ({ path })), ...over });
+	t("sensitive: no globs configured never holds", classify(withFiles(["secrets/a.txt"])).state === "approved");
+	t("sensitive: a changed file under a globbed folder holds", (() => { const r = classify(withFiles(["src/a.ts", "secrets/k/a.txt"]), { sensitivePaths: sens }); return r.state === "manual" && /sensitive paths \(secrets\/k\/a\.txt\)/.test(r.reason); })());
+	t("sensitive: ** and a bare extension match at any depth", classify(withFiles(["a/b/c/key.pem"]), { sensitivePaths: sens }).state === "manual");
+	t("sensitive: a trailing-slash glob covers the folder", classify(withFiles([".github/workflows/ci.yml"]), { sensitivePaths: sens }).state === "manual");
+	t("sensitive: other files do not trip it", classify(withFiles(["src/secrets.ts", "docs/pem.md"]), { sensitivePaths: sens }).state === "approved");
+	t("sensitive: even an APPROVED review does not let atelier merge it", classify(withFiles(["secrets/a"], { reviewDecision: "APPROVED" }), { sensitivePaths: sens }).state === "manual");
+	t("sensitive: a merged PR is still merged", classify(withFiles(["secrets/a"], { state: "MERGED" }), { sensitivePaths: sens }).state === "merged");
 	t("a merged PR is merged", cls(pr({ state: "MERGED" })).state === "merged");
 	t("an APPROVED review decision approves", cls(pr({ reviewDecision: "APPROVED" })).state === "approved");
 	t("changes requested is manual", cls(pr({ reviewDecision: "CHANGES_REQUESTED" })).state === "manual");
@@ -198,6 +235,9 @@ async function selfTest() {
 	writeFileSync(join(repo, ".agents", "aw", "merge.yml"), 'version: 1\napproval:\n  wait_for:\n    - "Darkplane auto-approval"\n    - policy-bot\n  max_wait_minutes: 10\n  start_grace_minutes: 2\n');
 	const cfg = await loadApprovalConfig(repo);
 	t("merge.yml names the checks and the timings", JSON.stringify(cfg) === JSON.stringify({ waitFor: ["Darkplane auto-approval", "policy-bot"], maxWaitMinutes: 10, startGraceMinutes: 2 }), JSON.stringify(cfg));
+	writeFileSync(join(repo, ".agents", "aw", "merge.yml"), "approval:\n  wait_for: policy-bot\n");
+	writeFileSync(join(repo, ".agents", "aw", "merge.yml"), 'sensitive_paths: ["infra/**", "**/*.pem"]\n');
+	t("merge.yml sensitive_paths are read", JSON.stringify((await loadApprovalConfig(repo)).sensitivePaths) === '["infra/**","**/*.pem"]');
 	writeFileSync(join(repo, ".agents", "aw", "merge.yml"), "approval:\n  wait_for: policy-bot\n");
 	t("a single wait_for string is one check", JSON.stringify((await loadApprovalConfig(repo)).waitFor) === '["policy-bot"]');
 	writeFileSync(join(repo, ".agents", "aw", "merge.yml"), "approval:\n  max_wait_minutes: soon\n");
@@ -260,7 +300,7 @@ async function main() {
 		const maxWait = minutes(a["max-wait"], cfg.maxWaitMinutes ?? DEFAULT_MAX_WAIT_MINUTES, "--max-wait (minutes)");
 		const graceMs = (cfg.startGraceMinutes ?? START_GRACE_MINUTES) * 60_000;
 		const result = await waitForApproval({
-			check: async (sinceStartMs, grace) => classify(readPr(a.pr), { checks, sinceStartMs, graceMs: grace }),
+			check: async (sinceStartMs, grace) => classify(readPr(a.pr), { checks, sinceStartMs, graceMs: grace, sensitivePaths: cfg.sensitivePaths ?? [] }),
 			expectedHead: typeof a.head === "string" ? a.head : null,
 			maxWaitMs: maxWait * 60_000,
 			intervalMs: Math.max(1, interval) * 1000,

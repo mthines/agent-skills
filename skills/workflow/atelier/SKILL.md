@@ -343,7 +343,11 @@ approval:
   wait_for: ["Darkplane auto-approval"]   # regexes, case-insensitive, on check-run or status names; all must pass
   max_wait_minutes: 30                    # default for --max-wait
   start_grace_minutes: 5                  # how long a named check may take to show up
+sensitive_paths: ["infra/**", "**/*.pem", ".github/workflows/"]   # globs; a PR changing any is never merged by atelier
 ```
+
+`sensitive_paths` is checked first, before any review or approval: a PR whose changed files match (`**` crosses folders, `*` and `?` stay in one; a pattern with no `/` matches at any depth; a trailing `/` is a folder) ends `APPROVAL_WAIT: manual`, even with the review decision `APPROVED`, so a person merges it.
+`gh` lists at most the first 100 changed files of a PR.
 
 No `merge.yml` and no `--check` → a required review is a person's job at once (`manual`), with no wait; nothing about the repo is assumed.
 A named check that passes is not yet the review: the wait ends `approved` only when the review decision itself is `APPROVED` (a person's review counts too), because `prepare --merge` is refused until then.
@@ -384,6 +388,7 @@ Atelier merges on its own, and a person is needed only where one cannot be repla
 | Needed | Why | Where it shows |
 | --- | --- | --- |
 | The default branch requires an approving review and no `approval.wait_for` check gives it | atelier never approves a PR or bypasses the rule | `APPROVAL_WAIT: manual`, `MANUAL: merge` in setup |
+| The PR changes a `sensitive_paths` glob in `.agents/aw/merge.yml` | the repo marked it as never auto-merged | `APPROVAL_WAIT: manual` |
 | A reviewer requested changes | a human's objection is not the agent review's to overrule | `APPROVAL_WAIT: manual` |
 | Build's `review-loop` ended `flagged`, `checks-red` or `NOT REVIEWED`, or `aw` skipped a companion | the agent review did not pass | Build `hold` |
 | The merge gate refused the contract, the proof or CI | the change is not shown to work | Ready/Merge `hold`, `failed` or `refuse` |
