@@ -30,7 +30,9 @@ const { parseContract } = await import(pathToFileURL(TICK()).href);
 
 const LABEL = "deployment-verify";
 // The one ESCALATE the revert lane owns: no flag to turn off and no platform rollback (deployment-verify rules/rollback.md).
+// An irreversible change never rolls back automatically, whatever the policy: it fails without a revert.
 const NEEDS_HUMAN_ROLLBACK = /rollback needs a human/;
+const IRREVERSIBLE = /reversibility: irreversible/;
 const STATUS_RE = /^deployment-verify (?:#\d+|local): (.+?) — (.*)$/;
 
 // What Deliver does with the PR: run the controller, or skip with the reason the terminal `Deliver:` line shows.
@@ -53,7 +55,7 @@ export function mapOutcome(line) {
 	const reason = `deployment-verify ${status} — ${detail}`;
 	if (status === "PASS") return { decision: "proceed", reason, revert: false };
 	if (status === "ROLLED_BACK") return { decision: "failed", reason, revert: false };
-	if (status === "ESCALATE") return { decision: "failed", reason, revert: NEEDS_HUMAN_ROLLBACK.test(detail) };
+	if (status === "ESCALATE") return { decision: "failed", reason, revert: NEEDS_HUMAN_ROLLBACK.test(detail) && !IRREVERSIBLE.test(detail) };
 	// INCONCLUSIVE, STOPPED, OVERRIDDEN, IN PROGRESS (deploy | baseline | step | hold | rollback): nothing to act on yet.
 	return { decision: "hold", reason: status.startsWith("IN PROGRESS") ? `verifying — ${reason}` : reason, revert: false };
 }
@@ -92,6 +94,7 @@ function selfTest() {
 	t("PASS → proceed", m("PASS — every probed route held").decision === "proceed");
 	t("ROLLED_BACK → failed, no revert (already reversed)", m("ROLLED_BACK — RECOVERED in 60 s").decision === "failed" && !m("ROLLED_BACK — x").revert);
 	t("ESCALATE rollback needs a human → failed + revert lane", m("ESCALATE — rollback needs a human (reversibility: code)").revert && m("ESCALATE — rollback needs a human").decision === "failed");
+	t("an irreversible change is never sent to the revert lane", m("ESCALATE — ROLLBACK verdict (x); rollback needs a human (reversibility: irreversible)").decision === "failed" && !m("ESCALATE — rollback needs a human (reversibility: irreversible)").revert);
 	t("other ESCALATE → failed, no revert", m("ESCALATE — errors persist after rollback").decision === "failed" && !m("ESCALATE — errors persist after rollback").revert);
 	for (const s of ["INCONCLUSIVE — window too small", "STOPPED — deploy not detected in 60 min", "IN PROGRESS (hold) — step 10%: HOLD", "IN PROGRESS (deploy) — waiting for the deploy", "OVERRIDDEN — by a human"]) t(`${s.split(" — ")[0]} → hold`, m(s).decision === "hold");
 	t("an in-progress rollout reads as verifying", /^verifying/.test(m("IN PROGRESS (step) — step 100%: HOLD").reason));
