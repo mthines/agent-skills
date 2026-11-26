@@ -18,15 +18,30 @@
 // Exit: 0 proceed or skipped, 1 failed, 3 hold, 2 error.
 
 import { execFileSync, spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { isMain, makeTester, parseArgs, skillDir } from "./lib.mjs";
 import { hostedRepo, optOut } from "./merge-gate.mjs";
 
 const DV_DIR = () => skillDir("deployment-verify", "testing", "DEPLOYMENT_VERIFY_DIR");
 const TICK = () => join(DV_DIR(), "scripts", "tick.mjs");
-const { parseContract } = await import(pathToFileURL(TICK()).href);
+// Loaded once, but never fatal at import: a missing deployment-verify install is an error (exit 2), not a failed verify.
+let dvError = null;
+const dv = await (async () => {
+	try {
+		return await import(pathToFileURL(TICK()).href);
+	} catch (e) {
+		dvError = e;
+		return null;
+	}
+})();
+function parseContract(body) {
+	if (!dv) throw new Error(`deployment-verify not loadable: ${dvError?.message}`);
+	return dv.parseContract(body);
+}
 
 const LABEL = "deployment-verify";
 // The one ESCALATE the revert lane owns: no flag to turn off and no platform rollback (deployment-verify rules/rollback.md).
@@ -65,19 +80,22 @@ export function lastStatus(stdout, number) {
 	return String(stdout || "").split("\n").filter((l) => l.startsWith(`deployment-verify #${number}:`)).at(-1) || null;
 }
 
-const realGh = (args) => execFileSync("gh", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+const realGh = (args, cwd) => execFileSync("gh", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
 const realTick = (args, cwd) => spawnSync(process.execPath, [TICK(), ...args], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "inherit"] });
 
 export async function verify({ pr, unattended = false, repoDir = process.cwd(), gh = realGh, tick = realTick, hosted = null }) {
+	if (!dv) throw new Error(`deployment-verify not loadable: ${dvError?.message}`);
 	const number = String(pr).match(/(\d+)\/?$/)?.[1] ?? String(pr);
-	const view = JSON.parse(gh(["pr", "view", number, "--json", "body,mergedAt"]));
+	// gh gets the PR as given (a URL keeps its repo) and runs in repoDir, the repo tick.mjs runs in.
+	const ref = String(pr);
+	const view = JSON.parse(gh(["pr", "view", ref, "--json", "body,mergedAt"], repoDir));
 	if (!view.mergedAt) return { decision: "skipped", reason: `#${number} is not merged`, revert: false };
 	const plan = planVerify({ body: view.body, hosted: hosted ?? (await hostedRepo(repoDir)) });
 	if (plan.action === "skip") return { decision: "skipped", reason: plan.reason, revert: false };
 	if (unattended) {
 		// The label is how the scheduled `tick --all --unattended` finds the rollout after this run exits.
-		gh(["label", "create", LABEL, "--color", "fbca04", "--description", "deployment-verify rollout in progress", "--force"]);
-		gh(["pr", "edit", number, "--add-label", LABEL]);
+		gh(["label", "create", LABEL, "--color", "fbca04", "--description", "deployment-verify rollout in progress", "--force"], repoDir);
+		gh(["pr", "edit", ref, "--add-label", LABEL], repoDir);
 	}
 	const r = tick(unattended ? ["--pr", number, "--unattended"] : ["--pr", number, "--run"], repoDir);
 	const line = lastStatus(r.stdout, number);
@@ -110,7 +128,8 @@ function selfTest() {
 
 	// The run itself, with gh and tick.mjs stubbed.
 	const calls = [];
-	const gh = (body, mergedAt = "2026-11-26T08:00:00Z") => (args) => (calls.push(args.join(" ")), args[1] === "view" ? JSON.stringify({ body, mergedAt }) : "");
+	const cwds = [];
+	const gh = (body, mergedAt = "2026-11-26T08:00:00Z") => (args, cwd) => (calls.push(args.join(" ")), cwds.push(cwd), args[1] === "view" ? JSON.stringify({ body, mergedAt }) : "");
 	const tickWith = (stdout, status = 0) => (args) => (calls.push(`tick ${args.join(" ")}`), { stdout, status });
 	return (async () => {
 		let r = await verify({ pr: "https://github.com/a/b/pull/5", gh: gh(contract({})), tick: tickWith(L("PASS — held\n")), hosted: true });
@@ -118,6 +137,10 @@ function selfTest() {
 		calls.length = 0;
 		r = await verify({ pr: 5, unattended: true, gh: gh(contract({})), tick: tickWith(L("IN PROGRESS (deploy) — waiting for the deploy\n")), hosted: true });
 		t("unattended: labels the PR, ticks once, holds as verifying", r.decision === "hold" && /scheduled tick --all/.test(r.reason) && calls.includes("pr edit 5 --add-label deployment-verify") && calls.includes("tick --pr 5 --unattended"), JSON.stringify(calls));
+		calls.length = 0;
+		cwds.length = 0;
+		r = await verify({ pr: "https://github.com/a/b/pull/5", unattended: true, repoDir: "/repo", gh: gh(contract({})), tick: tickWith(L("PASS — held\n")), hosted: true });
+		t("gh keeps the PR URL's repo and runs in --repo-dir", calls.includes("pr view https://github.com/a/b/pull/5 --json body,mergedAt") && calls.includes("pr edit https://github.com/a/b/pull/5 --add-label deployment-verify") && cwds.every((c) => c === "/repo"), JSON.stringify({ calls, cwds }));
 		calls.length = 0;
 		r = await verify({ pr: 5, gh: gh(contract({ flag: { key: "f" } })), tick: tickWith(""), hosted: true });
 		t("a flag contract never reaches tick.mjs", r.decision === "skipped" && !calls.some((c) => c.startsWith("tick")), JSON.stringify(calls));
@@ -127,6 +150,12 @@ function selfTest() {
 		t("a tick that dies with no line holds", r.decision === "hold" && /exited 1/.test(r.reason));
 		r = await verify({ pr: 5, gh: gh(contract({})), tick: tickWith(L("ESCALATE — rollback needs a human (reversibility: code)\n"), 3), hosted: true });
 		t("exit 3 with an ESCALATE line → failed + revert", r.decision === "failed" && r.revert);
+		// A deployment-verify that cannot load is an error (exit 2), never a failed verify (exit 1).
+		const fake = mkdtempSync(join(tmpdir(), "verify-deploy-"));
+		writeFileSync(join(fake, "SKILL.md"), "fake");
+		const broken = spawnSync(process.execPath, [fileURLToPath(import.meta.url), "--pr", "5"], { encoding: "utf8", env: { ...process.env, DEPLOYMENT_VERIFY_DIR: fake } });
+		t("a deployment-verify that cannot load exits 2, not 1", broken.status === 2 && /not loadable/.test(broken.stderr), `${broken.status} ${broken.stderr}`);
+		rmSync(fake, { recursive: true, force: true });
 		return done();
 	})();
 }
