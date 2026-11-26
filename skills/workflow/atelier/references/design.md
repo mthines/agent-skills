@@ -105,11 +105,14 @@ It is scoped `branch::{owner}/{repo}::{head-branch}`, like `pr-review-state`, so
 A merge is not the end of the change: the default-branch pipeline versions, builds, and releases it, and it can fail where PR CI passed (a release job that runs only on `main`; a missing tag on a version step).
 Deliver reads that run with a script (`pipeline.mjs`), treats a skipped required job as red, and starts one fix PR when the merged change caused the failure; when the fix is red too, it reverts through a PR, as `policies.rollback` allows (`pipeline.on_red: revert-first` swaps the order).
 Tags, force pushes, and release re-runs stay with the user, because they change shared release state and a wrong one is hard to undo.
+Once the pipeline is green, it verifies a change with no flag on the deploy itself (`verify-deploy.mjs` → `deployment-verify`'s `tick.mjs`): a green build says the release shipped, not that the service still works, and nobody else watches a change that has no flag to roll out.
+That is why a repo with a hosted service needs a contract (or an explicit opt-out) on every PR before the merge: `--draft-contract` refuses a merged PR, so a contract cannot be added after the fact.
+Deliver runs the controller in the background or as one scheduled tick, never as a foreground loop, so a clean deploy costs no model tokens; a flag contract stays with a human, because atelier never flips a flag, and an ESCALATE that asks a human to roll back goes to the same revert lane as a red pipeline.
 It is a step, not a stage the machine resumes: its result is recorded on the PR state comment for display (`--stage deliver`), while `--next` and the run trace keep their three-stage shape.
 
 ## Out of scope
 
-This skeleton records evidence and stops after the merge and its pipeline.
+This skeleton records evidence and stops after the merge, its pipeline, and the verify of a no-flag deploy.
 These later steps will read the decision log and are not built here:
 
 - Earned autonomy: atelier flipping the flag itself once a repo's record of clean outcomes earns it.

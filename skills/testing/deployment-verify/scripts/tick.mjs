@@ -832,10 +832,23 @@ function prStore(number) {
 		reread() {
 			comment.body = JSON.parse(gh(["api", `repos/{owner}/{repo}/issues/comments/${comment.id}`])).body;
 		},
+		// The outcome is already in the report comment: a relabel that fails is logged, never thrown over it.
 		finish() {
-			gh(["pr", "edit", String(number), "--remove-label", LABEL, "--add-label", `${LABEL}:done`]);
+			try {
+				gh(["label", "create", `${LABEL}:done`, "--color", "0e8a16", "--description", "deployment-verify finished", "--force"]);
+				gh(finishArgs(pr.labels, number));
+			} catch (e) {
+				console.error(`#${number}: relabel failed — ${String(e.message).split("\n")[0]}`);
+			}
 		},
 	};
+}
+
+// A PR that was run without the label (`--pr <n>`, as atelier's Deliver does) has nothing to remove:
+// `gh pr edit --remove-label` fails on a label the PR does not carry.
+export function finishArgs(labels, number) {
+	const has = (labels || []).some((l) => (l?.name ?? l) === LABEL);
+	return ["pr", "edit", String(number), ...(has ? ["--remove-label", LABEL] : []), "--add-label", `${LABEL}:done`];
 }
 
 // Probe results per version, one comment each on one per-repo issue (opt-in: probes.yml defaults.history: issue).
@@ -992,6 +1005,13 @@ function exception(config, event) {
 }
 
 async function runOne({ store, contract, config, sha, mergedAt, deployedAt, loop, decision = null, slug = null }) {
+	// A finished rollout is reported as stored: ticking it again would re-run on_exception. A label still on it
+	// (re-added by a re-run, or a relabel that failed) comes off, or every scheduled --all would report it again.
+	const stored = store.read();
+	if (stored?.phase === "done" && !decision) {
+		if ((store.pr?.labels || []).some((l) => (l?.name ?? l) === LABEL)) store.finish();
+		return stored;
+	}
 	const io = realIo({ config, contract, pr: store.pr, slug });
 	const holder = `${process.env.GITHUB_RUN_ID || process.pid}-${Date.now()}`;
 	for (;;) {
@@ -1514,8 +1534,20 @@ async function selfTest() {
 		];
 		const ok = parseHistory(hist, "production", "z")?.version === "b" && parseHistory(hist, "production", "b")?.version === "a" && parseHistory([], "production", "b") === null;
 		line("probe history: latest record on another version in the same environment", ok, null);
+
+		const doneState = { phase: "done", outcome: "PASS", reason: "every probed route held" };
+		let writes = 0;
+		let finishes = 0;
+		const doneStore = { pr: { number: 7 }, read: () => doneState, write: () => writes++, reread() {}, finish: () => finishes++ };
+		const again = await runOne({ store: doneStore, contract: { service: "api", root_spans: ["GET /x"] }, config: base });
+		line("a finished rollout is reported, never ticked again", again === doneState && writes === 0 && finishes === 0 && statusLine(again, { number: 7 }) === "deployment-verify #7: PASS — every probed route held", null);
+		const labelledStore = { ...doneStore, pr: { number: 7, labels: [{ name: LABEL }] } };
+		const labelledAgain = await runOne({ store: labelledStore, contract: { service: "api", root_spans: ["GET /x"] }, config: base });
+		line("a finished rollout still labelled is relabelled once, so --all stops picking it up", labelledAgain === doneState && writes === 0 && finishes === 1, null);
+		const relabel = finishArgs([{ name: LABEL }], 7).join(" ") === "pr edit 7 --remove-label deployment-verify --add-label deployment-verify:done" && finishArgs([], 7).join(" ") === "pr edit 7 --add-label deployment-verify:done";
+		line("the relabel removes the label only when the PR carries it", relabel, null);
 	}
-	const total = 55;
+	const total = 58;
 	console.log(failed ? `${failed}/${total} failed` : `${total}/${total} passed`);
 	process.exit(failed ? 1 : 0);
 }

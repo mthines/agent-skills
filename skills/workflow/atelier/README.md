@@ -81,6 +81,8 @@ See every state in the [comment gallery](./scripts/fixtures/comments/README.md).
 
 - **A user-visible change ships behind a feature flag.**
   The merge gate refuses a UI diff whose PR body has no `deployment-verify:v1` flag contract.
+- **A change to a hosted service is verified on its deploy.**
+  In a repo whose `release.yml` detects production deploys, every PR carries a contract or a `<!-- deployment-verify:none — <reason> -->` opt-out, and after the pipeline is green Deliver runs `deployment-verify` on a no-flag change: verify, and revert through a PR only when it asks a human to roll back.
 - **CI must have actually run.**
   A draft whose checks were all skipped is not green CI.
 - **Every acceptance criterion has proof.**
@@ -100,7 +102,7 @@ Every file is optional; each one unlocks a little more.
 | File | Unlocks | Written by |
 | --- | --- | --- |
 | `.agents/aw/environments.yml`, `telemetry.yml` | signed-in UI checks and telemetry proof | `/aw-verify setup` |
-| `.agents/aw/release.yml` | flag rollouts and the pipeline Deliver reads | `/deployment-verify setup` |
+| `.agents/aw/release.yml` | flag rollouts, the pipeline Deliver reads, and the deploy detection that turns on the verify | `/deployment-verify setup` |
 | `.agents/aw/tracker.yml` | a linked or new ticket for every run | `/ticket setup` |
 | `.agents/aw/merge.yml` | waiting for your repo's auto-approval before the merge | you, by hand |
 
@@ -122,7 +124,7 @@ Every file is optional; each one unlocks a little more.
 
 ## What it never does
 
-- Flip a feature flag or deploy: after the merge, it tells you how to roll the change out with `/deployment-verify`.
+- Flip a feature flag or deploy: after the merge, it tells you how to roll a flag out with `/deployment-verify`; it runs `deployment-verify` itself only for a change with no flag.
 - Push to the default branch: a fix or a revert goes through its own PR, with the same gates.
 - Approve a PR, or merge with `--admin` or `--force`.
 - Edit a PR body to make a gate pass.

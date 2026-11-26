@@ -2,8 +2,9 @@
 // merge-gate.mjs — atelier's deterministic merge gate (rules/merge-gate.md).
 //
 // Refuses a merge when CI did not run green on the PR's current head, when the diff is user-visible
-// and the PR body has no deployment-verify contract that names a flag, or when the PR's verify report
-// does not show every acceptance criterion proven (the proof half).
+// and the PR body has no deployment-verify contract that names a flag, when a repo with a hosted
+// production service gets a PR with neither a contract nor a `deployment-verify:none` opt-out, or when
+// the PR's verify report does not show every acceptance criterion proven (the proof half).
 // Owns no detector of its own:
 //   CI ran green  = prepare's scripts/ci-ran.mjs (ciStatus/classify), read at the head right now
 //   user-visible  = ui-verify's scripts/is-ui-diff.mjs, run by path
@@ -140,7 +141,8 @@ export async function flagContract(body, repoDir = process.cwd()) {
 	if (error) return out({ has: false, missing: error.startsWith("no contract") ? "contract" : "valid-json", detail: error });
 	if (!parsed) return out({ has: false, missing: "valid-json", detail: "the contract is not a JSON object" });
 	const key = contract.flag?.key;
-	if (typeof key !== "string" || !key.trim()) return out({ has: false, missing: "flag", detail: "the contract names no flag" });
+	// A contract with no flag is measured before/after the deploy: valid for a non-UI diff in a hosted repo, never for a UI one.
+	if (typeof key !== "string" || !key.trim()) return out({ has: false, missing: "flag", detail: "the contract names no flag", noFlag: !contract.flag && config ? !validateContract(contract, config) : false, noFlagDetail: config ? validateContract(contract, config) : null });
 	const steppable = providers.includes(contract.flag.provider);
 	// A provider name release.yml does not declare, in a repo that declares some, is a typo, not "no provider":
 	// passing it would silently drop the stepped rollout the author asked for.
@@ -155,8 +157,50 @@ export async function flagContract(body, repoDir = process.cwd()) {
 	return out({ has: true, flag: key, warning: steppable ? null : NO_PROVIDER_WARNING });
 }
 
-export function decide({ isUI, contract }) {
-	if (!isUI) return { decision: "pass", reason: "not user-visible — no UI file in the diff" };
+// A repo whose release.yml production environment detects its deploys has a service deployment-verify can watch.
+// `detect: manual`, no release.yml, or one that does not load → not hosted: today's rule (a contract only for a UI diff).
+export async function hostedRepo(repoDir = process.cwd()) {
+	const releaseDir = join(repoDir, ".agents", "aw");
+	if (!existsSync(join(releaseDir, "release.yml")) && !existsSync(join(releaseDir, "release.json"))) return false;
+	const { loadConfig } = await deploymentVerifyModule("tick.mjs");
+	try {
+		const detect = loadConfig("production", { cwd: repoDir }).environment?.deploy?.detect;
+		return Boolean(detect) && detect !== "manual";
+	} catch {
+		return false;
+	}
+}
+
+// `<!-- deployment-verify:none — <reason> -->`: the author's word that the change deploys nothing to watch.
+export const OPT_OUT_RE = /<!--\s*deployment-verify:none\b\s*[—–-]*\s*([\s\S]*?)\s*-->/;
+export function optOut(body) {
+	const m = (body || "").match(OPT_OUT_RE);
+	return m ? { reason: m[1].trim() } : null;
+}
+
+// The hosted-repo rule for a non-UI diff: a valid contract (flag or before/after) or an opt-out with a reason.
+function decideHosted(contract, opt) {
+	if (contract.has) return { decision: "pass", reason: `not user-visible, behind flag ${contract.flag}` };
+	if (contract.noFlag) return { decision: "pass", reason: "not user-visible; before/after deployment-verify contract" };
+	if (contract.missing === "contract" && opt?.reason) return { decision: "pass", reason: `deploys nothing to verify: ${opt.reason}` };
+	const what = contract.missing !== "contract"
+		? `the deployment-verify:v1 contract is not valid (${contract.missing === "flag" ? contract.noFlagDetail || "a flag with no key" : contract.detail})`
+		: opt ? "the deployment-verify:none marker gives no reason" : "neither a deployment-verify:v1 contract nor a deployment-verify:none marker in the PR body";
+	return {
+		decision: "refuse",
+		reason: `hosted production service, ${what}`,
+		how: [
+			"Every change to a repo with a hosted service is verified after its deploy. Before the merge, either:",
+			"node <deployment-verify>/scripts/tick.mjs --draft-contract --pr <n>   # prints a draft from the PR's criteria",
+			'fill "service" and "root_spans" (no "flag": it is measured before/after the deploy) and put the JSON between',
+			`<!-- deployment-verify:v1 --> and <!-- /deployment-verify:v1 --> (${CONTRACT_DOC}); or, for a change that deploys nothing,`,
+			"add <!-- deployment-verify:none — <why nothing deployed can change> --> to the PR body.",
+		].join("\n"),
+	};
+}
+
+export function decide({ isUI, contract, hosted = false, optOut: opt = null }) {
+	if (!isUI) return hosted ? decideHosted(contract, opt) : { decision: "pass", reason: "not user-visible — no UI file in the diff" };
 	if (contract.has) {
 		const reason = `user-visible, behind flag ${contract.flag}`;
 		return contract.warning ? { decision: "pass", reason: `${reason}; ${contract.warning}`, warning: contract.warning } : { decision: "pass", reason };
@@ -203,7 +247,8 @@ export async function gate({ files, body, surfaceJson, surfaceFile, repoDir = pr
 	if (!surfaceJson && !surfaceFile) surfaceJson = await repoSurface(repoDir);
 	const ui = userVisible(files, { surfaceJson, surfaceFile });
 	const contract = await flagContract(body, repoDir);
-	let d = decide({ isUI: ui.isUI, contract });
+	const hosted = await hostedRepo(repoDir);
+	let d = decide({ isUI: ui.isUI, contract, hosted, optOut: optOut(body) });
 	let refusedBy = d.decision === "refuse" ? "contract" : null;
 	const ciRefusal = d.decision === "pass" && ci ? decideCi(ci) : null;
 	if (ciRefusal) [d, refusedBy] = [ciRefusal, "ci"];
@@ -215,7 +260,7 @@ export async function gate({ files, body, surfaceJson, surfaceFile, repoDir = pr
 	const ciOut = ci ? { state: ci.state, head: ci.head, reason: ci.reason } : "not checked (--contract-only)";
 	const proofOut = proof ? (proof.length ? proof : "report complete") : "not checked (--contract-only)";
 	const { proof: _, ...rest } = d;
-	return { ...rest, refused_by: refusedBy, user_visible: ui.isUI, has_flag_contract: contract.has, flag: contract.flag ?? null, warning: d.warning ?? null, ui_files: ui.matched, ci: ciOut, proof: proofOut };
+	return { ...rest, refused_by: refusedBy, user_visible: ui.isUI, hosted, has_flag_contract: contract.has, flag: contract.flag ?? null, warning: d.warning ?? null, ui_files: ui.matched, ci: ciOut, proof: proofOut };
 }
 
 async function fromGh(pr, { contractOnly }) {
@@ -362,7 +407,29 @@ async function selfTest() {
 	const real = await ciFromRollup(JSON.parse(readFileSync(join(skillDir("prepare", "delivery", "PREPARE_DIR"), "scripts", "fixtures", "skipped-plus-vercel.json"), "utf8")));
 	r = await gate({ files: ["src/components/Header.tsx"], body: FLAG_BODY, repoDir: empty, ci: real });
 	t("PR #29652's real rollup (16 skipped + Vercel) refuses", r.decision === "refuse" && /CI not run/.test(r.reason), r.reason);
-	for (const d of [noProv, withProv]) rmSync(d, { recursive: true, force: true });
+	// A hosted production service (deploy detection is not manual): every PR needs a contract or an opt-out.
+	const hostedDir = mkdtempSync(join(tmpdir(), "atelier-gate-"));
+	mkdirSync(join(hostedDir, ".agents", "aw"), { recursive: true });
+	writeFileSync(join(hostedDir, ".agents", "aw", "release.yml"), "environments:\n  production:\n    url: x\n    deploy:\n      detect: { attribute: service.version, equals: merge_sha }\nflags:\n  providers: []\n");
+	const BEFORE_AFTER = FLAG_BODY.replace(/, "flag": \{[^}]*\}, "cohort": \{[^}]*\}, "reversibility": "flag"/, "");
+	t("hostedRepo: detect attribute is hosted, manual and none are not", (await hostedRepo(hostedDir)) && !(await hostedRepo(noProv)) && !(await hostedRepo(empty)));
+	r = await gate({ files: ["scripts/worker.mjs"], body: "no contract", repoDir: hostedDir });
+	t("hosted: a non-UI diff with neither contract nor marker refuses, naming both fixes", r.decision === "refuse" && r.hosted && /--draft-contract/.test(r.how) && /deployment-verify:none/.test(r.how), JSON.stringify(r));
+	r = await gate({ files: ["scripts/worker.mjs"], body: BEFORE_AFTER, repoDir: hostedDir });
+	t("hosted: a before/after contract passes a non-UI diff", r.decision === "pass" && /before\/after/.test(r.reason), JSON.stringify(r));
+	r = await gate({ files: ["scripts/worker.mjs"], body: FLAG_BODY, repoDir: hostedDir });
+	t("hosted: a flag contract passes a non-UI diff", r.decision === "pass" && r.flag === "newHeader", JSON.stringify(r));
+	r = await gate({ files: ["docs/guide.md"], body: "x\n<!-- deployment-verify:none — docs only, nothing deploys -->", repoDir: hostedDir });
+	t("hosted: an opt-out with a reason passes, quoting it", r.decision === "pass" && /docs only, nothing deploys/.test(r.reason), JSON.stringify(r));
+	r = await gate({ files: ["docs/guide.md"], body: "x\n<!-- deployment-verify:none — -->", repoDir: hostedDir });
+	t("hosted: an opt-out with no reason refuses", r.decision === "refuse" && /gives no reason/.test(r.reason), JSON.stringify(r));
+	r = await gate({ files: ["scripts/worker.mjs"], body: BEFORE_AFTER.replace(/"service": "ui", /, ""), repoDir: hostedDir });
+	t("hosted: an invalid before/after contract refuses with deployment-verify's reason", r.decision === "refuse" && /missing "service"/.test(r.reason), JSON.stringify(r));
+	r = await gate({ files: ["src/components/Header.tsx"], body: "x\n<!-- deployment-verify:none — trust me -->", repoDir: hostedDir });
+	t("hosted: a UI diff still needs a flag contract, the opt-out does not pass it", r.decision === "refuse" && /user-visible/.test(r.reason), JSON.stringify(r));
+	r = await gate({ files: ["scripts/worker.mjs"], body: "no contract", repoDir: noProv });
+	t("not hosted (no deploy detection): a non-UI diff passes as before", r.decision === "pass" && r.hosted === false, JSON.stringify(r));
+	for (const d of [noProv, withProv, hostedDir]) rmSync(d, { recursive: true, force: true });
 	rmSync(empty, { recursive: true, force: true });
 	rmSync(withSurface, { recursive: true, force: true });
 	return done();
