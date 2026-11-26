@@ -69,6 +69,7 @@ node ${CLAUDE_SKILL_DIR}/scripts/tick.mjs --local <state.json> --contract <contr
 `tick` = one pass, then exit; `--run` = keep ticking until the outcome is terminal.
 A rollout that already ended is reported from its stored state and never ticked again, so a re-run is safe; the relabel to `deployment-verify:done` does not need the PR to carry the `deployment-verify` label (a `--pr` run never adds it).
 Never re-implement a step the controller performs; read its stderr and the report it writes.
+A tick that moves the rollout also exports one gauge point for the live pipeline board when an export endpoint is set ([`rules/rollout-state.md`](./rules/rollout-state.md)).
 In PR mode it prints one status line per PR on stdout (`deployment-verify #<n>: <status> — <detail>`); the report itself lives in the PR comment.
 It implements these rules, which stay its specification:
 

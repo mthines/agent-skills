@@ -31,6 +31,7 @@ import { fileURLToPath } from "node:url";
 import { decide, DEFAULT_THRESHOLDS } from "./decide.mjs";
 import { ProbeAuthError, draftProbes, probeRunner, runProbe } from "./probe.mjs";
 import { recommend, riskClass, RISK_CLASSES } from "./promote.mjs";
+import { emitRollout } from "./rollout-state.mjs";
 import { readEvidence, updateSignal } from "./signal.mjs";
 import { parseYaml } from "./yaml-lite.mjs";
 
@@ -1047,6 +1048,7 @@ async function runOne({ store, contract, config, sha, mergedAt, deployedAt, loop
 		const heldNow = next.phase === "hold" && !next.hold?.decision && !(next.notified || []).includes(HOLD_EVENT);
 		if (heldNow) next.notified = [...(next.notified || []), HOLD_EVENT];
 		store.write(renderReport(next, contract, store.pr));
+		await emitRollout({ prev: state, next, pr: store.pr, slug });
 		if (heldNow) {
 			exception(config, { outcome: HOLD_EVENT, reason: `hold at ${next.hold.at}%: recommendation ${next.hold.recommendation} (${next.hold.reason})`, pr: store.pr?.url || null, contract, state: next });
 			JUST_HELD.add(next);
@@ -1683,7 +1685,9 @@ async function main() {
 			invalid ||= validateContract(contract, cfg) || flipFollowUp(contract, cfg) || (holdCheckDue(store.read()) ? checkHoldReachable(contract, cfg) : null);
 			if (invalid) {
 				const s = { phase: "done", outcome: "STOPPED", reason: invalid, env: cfg.env, steps: [] };
+				const prev = store.read();
 				store.write(renderReport(s, contract || {}, store.pr));
+				await emitRollout({ prev, next: s, pr: store.pr, slug });
 				store.finish();
 				console.log(statusLine(s, store.pr));
 				continue;

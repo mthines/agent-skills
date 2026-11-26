@@ -44,6 +44,8 @@ export const DECISIONS = Object.freeze(["proceed", "skipped", "refuse", "hold", 
 export const OUTCOMES = Object.freeze(["merged", "held", "refused", "failed", "stopped", "abandoned"]);
 export const WAIT_KINDS = Object.freeze(["ci", "review", "human", "other"]);
 export const PR_OUTCOMES = Object.freeze(["clean", "reverted", "hotfixed"]);
+export const RUN_STATES = Object.freeze(["active", ...WAIT_KINDS.map((k) => `waiting_${k}`), ...OUTCOMES]);
+export const STATE_GAUGE = "atelier.run.state";
 export const RUN_COUNTER = "atelier.runs";
 export const MERGED_COUNTER = "atelier.prs.merged";
 export const OUTCOME_COUNTER = "atelier.outcomes";
@@ -316,7 +318,7 @@ export function buildRun(records, now = nowNs()) {
 	// A preflight stop never ran the stage preflight opened on spec: drop it, so the run reached preflight.
 	if (open?.implicit && run.outcome0 === "stopped") open = null;
 	close(run.endNs);
-	for (const w of run.waits) if (w.endNs === null) w.endNs = run.endNs;
+	for (const w of run.waits) if (w.endNs === null) Object.assign(w, { endNs: run.endNs, open: true });
 	const last = run.decisions.at(-1) ?? null;
 	run.outcome = run.finish?.outcome && OUTCOMES.includes(run.finish.outcome) ? run.finish.outcome : outcomeOf(last);
 	run.stageReached = [...run.stages].reverse().find((s) => s.name !== "setup")?.name ?? "preflight";
@@ -326,6 +328,29 @@ export function buildRun(records, now = nowNs()) {
 	run.totalS = total;
 	run.waitS = Math.min(waitS, total);
 	return run;
+}
+
+// Where a run is right now: its outcome once finished, else waiting on a CI/review/human wait that is still open, else active.
+export function stateOf(run) {
+	if (run.finish) return run.outcome;
+	const open = [...run.waits].reverse().find((w) => w.open);
+	return open ? `waiting_${open.kind}` : "active";
+}
+
+// One gauge point per transition: the value is the transition's epoch seconds, so `topk by (run) (1, …)` reads a run's current state.
+export function addStateGauge(ex, run, atNs) {
+	const [, name] = String(run.facts.repo || "").split("/");
+	const terminal = Boolean(run.finish);
+	const bucket = terminal ? reasonBucket(run.finish?.reason ?? run.lastDecision?.reason ?? "") : null;
+	ex.gauge(STATE_GAUGE, Number(atNs) / 1e9, {
+		"atelier.run.id": run.runId,
+		"atelier.work.ref": workRef(run.facts),
+		"vcs.repository.name": name || null,
+		"atelier.stage.name": run.stageReached,
+		"atelier.run.state": stateOf(run),
+		"atelier.reason_bucket": bucket,
+		...(run.facts.smoke === true ? { "atelier.smoke": true } : {}),
+	}, "s");
 }
 
 const spanId = (runId, key) => createHash("sha256").update(`atelier:${runId}:${key}`).digest("hex").slice(0, 16);
@@ -488,6 +513,7 @@ export function toExporter(run, env, otlp) {
 	});
 	for (const w of run.waits) ex.histogram("atelier.wait.duration", Number(w.endNs - w.startNs) / 1e9, { "atelier.wait.kind": w.kind, ...smoke }, "s");
 	if (typeof run.attrs["resume.idle_s"] === "number") ex.histogram("atelier.wait.duration", run.attrs["resume.idle_s"], { "atelier.wait.kind": "human", ...smoke }, "s");
+	if (run.finish) addStateGauge(ex, run, run.endNs);
 	const outcomes = OUTCOMES.includes(run.outcome) ? OUTCOMES : [...OUTCOMES, run.outcome];
 	ex.cumulativeSum(RUN_COUNTER, {
 		unit: "{run}", startNs: run.startNs,
@@ -592,15 +618,40 @@ const activeRunDir = (opts = {}) => {
 	return hasRun(recs) && !isFinished(recs) ? dir : null;
 };
 
+/**
+ * Live board: export the open run's current state as one gauge point, right now. A finished run exports it with its trace.
+ * A no-op without an endpoint, without an open run, or when the run already ended; never throws.
+ */
+export async function emitState(dir, env = process.env) {
+	try {
+		const { endpoint, headers } = exportTarget(env);
+		if (!endpoint || !dir) return null;
+		const records = readLedger(dir);
+		if (!hasRun(records) || isFinished(records)) return null;
+		const run = buildRun(records);
+		const lastNs = records.reduce((a, r) => (BigInt(r.ns) > a ? BigInt(r.ns) : a), 0n);
+		const otlp = await loadOtlp(env);
+		const ex = new otlp.OtlpExporter({ endpoint, headers, scopeName: SCOPE_NAME, scopeVersion: run.facts.version || "1", resource: resource(run.facts, traceIdFor(run.runId)) });
+		addStateGauge(ex, run, lastNs);
+		return await ex.flush();
+	} catch (e) {
+		warn(`state not exported — ${String(e?.message || e).slice(0, 200)}`);
+		return null;
+	}
+}
+
 /** preflight.mjs: begin the run, book preflight itself, open the next stage (`build` for a request, `setup` before --next on a PR). */
 export const markPreflight = guarded(async ({ startNs, status, gaps = [], pr = null, model = null, ticket = null, task = null, lookupPr = false, cwd = process.cwd(), runDir } = {}) => {
 	const dir = resolveRunDir({ dir: runDir });
 	const host = hostFacts(process.env, cwd);
 	// No --pr: the branch may already have one (a re-run after a hold); a scratch repo has no origin to ask.
 	const found = !pr && lookupPr && host.repo ? openPrUrl(cwd) : null;
+	// A PR URL names its repo: a real PR is never a scratch run because this cwd has no `origin`.
+	const prf = prFacts(pr || found, host.repo);
+	const repo = host.repo ?? prf.repo ?? null;
 	const facts = {
-		...host, ...smokeFacts(process.env, host.repo), ...(model ? { model } : {}), ...workFacts({ ticket, task, repo: host.repo }),
-		...prFacts(pr || found, host.repo), ...(pr ? { resumed: true } : {}),
+		...host, ...(repo ? { repo } : {}), ...smokeFacts(process.env, repo), ...(model ? { model } : {}), ...workFacts({ ticket, task, repo }),
+		...prf, ...(pr ? { resumed: true } : {}),
 	};
 	await beginRun(dir, facts, { ns: startNs });
 	appendRecord(dir, { t: "stage", name: "preflight", ns: startNs });
@@ -608,6 +659,7 @@ export const markPreflight = guarded(async ({ startNs, status, gaps = [], pr = n
 	appendRecord(dir, { t: "attr", target: "stage", attrs: { "preflight.status": status, "preflight.gaps": g.join(",") || null, "preflight.gap_count": g.length } });
 	appendRecord(dir, { t: "attr", target: "run", attrs: { "preflight.status": status, "preflight.gaps": g.join(",") || null, "preflight.gap_count": g.length, ...(pr ? { "run.resumed": true } : {}) } });
 	appendRecord(dir, { t: "stage", name: pr ? "setup" : "build", implicit: true });
+	await emitState(dir);
 	return dir;
 });
 
@@ -624,6 +676,7 @@ export const markNext = guarded(async ({ stage, state, pr = null, runDir } = {})
 	if (pr || state?.pr) appendRecord(dir, { t: "facts", pr: pr || state.pr });
 	appendRecord(dir, { t: "attr", target: "run", attrs });
 	if (stage && stage !== "stop" && STAGES.includes(stage)) appendRecord(dir, { t: "stage", name: stage });
+	await emitState(dir);
 	return dir;
 });
 
@@ -636,6 +689,7 @@ export const markCompanions = guarded(async ({ decision, tier, skipped = [], acc
 	const bag = { "companions.decision": decision, "companions.skipped": [...skipped].sort().join(",") || null, "companions.accepted": [...accepted].sort().join(",") || null, tier: tier || null };
 	appendRecord(dir, { t: "attr", target: "stage", attrs: bag });
 	appendRecord(dir, { t: "attr", target: "run", attrs: bag });
+	await emitState(dir);
 	return dir;
 });
 
@@ -652,21 +706,26 @@ export const markGate = guarded(async ({ result, contractOnly, pr = null, runDir
 	};
 	appendRecord(dir, { t: "attr", target: "stage", attrs: bag });
 	appendRecord(dir, { t: "attr", target: "run", attrs: bag });
+	await emitState(dir);
 	return dir;
 });
 
 /** state.mjs --record: close the open stage with the decision; a decision that ends the run finishes and exports it. */
-export const markDecision = guarded(async ({ stage, decision, reason = "", head = null, pr = null, memory = null, runDir } = {}, env = process.env) => {
+export const markDecision = guarded(async ({ stage, decision, reason = "", head = null, pr = null, memory = null, cwd = process.cwd(), runDir } = {}, env = process.env) => {
 	let dir = activeRunDir({ runDir });
 	if (!dir) {
 		// A record with no run (preflight skipped, or ATELIER_RUN_DIR unset in this shell) starts one here.
 		dir = resolveRunDir({ dir: runDir });
-		const host = hostFacts();
-		await beginRun(dir, { ...host, ...smokeFacts(env, host.repo), ...prFacts(pr, host.repo) }, {}, env);
+		const host = hostFacts(process.env, cwd);
+		// The PR URL names its repo: a real PR recorded from a cwd with no `origin` is not a scratch run.
+		const prf = prFacts(pr, host.repo);
+		const repo = host.repo ?? prf.repo ?? null;
+		await beginRun(dir, { ...host, ...(repo ? { repo } : {}), ...smokeFacts(env, repo), ...prf }, {}, env);
 	}
 	if (memory && Object.keys(memory).length) appendRecord(dir, { t: "memory", memory });
 	appendRecord(dir, { t: "decision", stage, decision, reason, sha: head, pr });
 	if (RUN_ENDING.has(decision) || (stage === "merge" && decision === "proceed")) return finishRun(dir, {}, env);
+	await emitState(dir, env);
 	return null;
 });
 
@@ -723,12 +782,18 @@ async function runWait(kind, cmd, runDir) {
 	})();
 	const k = WAIT_KINDS.includes(kind) ? kind : "other";
 	try {
-		if (dir) appendRecord(dir, { t: "wait", phase: "start", kind: k });
+		if (dir) {
+			appendRecord(dir, { t: "wait", phase: "start", kind: k });
+			await emitState(dir);
+		}
 	} catch {}
 	const res = cmd.length ? spawnSync(cmd[0], cmd.slice(1), { stdio: "inherit" }) : { status: 0 };
 	const code = res.status ?? (res.error ? 127 : 1);
 	try {
-		if (dir) appendRecord(dir, { t: "wait", phase: "end", kind: k, attrs: { "wait.exit_code": code } });
+		if (dir) {
+			appendRecord(dir, { t: "wait", phase: "end", kind: k, attrs: { "wait.exit_code": code } });
+			await emitState(dir);
+		}
 	} catch {}
 	if (res.error) process.stderr.write(`atelier-telemetry: ${cmd[0]}: ${res.error.message}\n`);
 	return code;
@@ -903,6 +968,19 @@ async function selfTest() {
 		t("no metric attribute carries free text", metrics.every((m) => (m.sum?.dataPoints ?? m.histogram?.dataPoints ?? []).every((p) => p.attributes.every((x) => !/reason$|url|run\.id/.test(x.key)))));
 		const fx = toExporter(failedRun, env, otlp).tracePayload().resourceSpans[0].scopeSpans[0].spans;
 		t("a failed stage is ERROR on the stage and the root", fx[0].status.code === 2 && fx[1].status.code === 2 && get(fx[1], "error.type") === "stage_failed");
+		const gv = (exr) => exr.metricPayload().resourceMetrics[0].scopeMetrics[0].metrics.filter((m) => m.name === STATE_GAUGE);
+		const heldGauge = gv(ex)[0]?.gauge.dataPoints[0];
+		const gAttr = (p, k) => p?.attributes.find((x) => x.key === k)?.value.stringValue;
+		t("a finished run exports one state gauge: held at ready, bounded reason, value = its end in epoch seconds", gv(ex).length === 1 && gAttr(heldGauge, "atelier.run.state") === "held"
+			&& gAttr(heldGauge, "atelier.stage.name") === "ready" && gAttr(heldGauge, "atelier.reason_bucket") === "ci_not_run_draft" && heldGauge.asDouble === Number(run.endNs) / 1e9);
+		const waiting = buildRun([rec({ t: "run", run_id: "r7", facts: { repo: "acme/web" } }, 0), rec({ t: "stage", name: "ready" }, 1), rec({ t: "wait", phase: "start", kind: "ci" }, 2)]);
+		t("an open CI wait is waiting_ci, a closed one is active, a finished run is its outcome", stateOf(waiting) === "waiting_ci"
+			&& stateOf(buildRun(ledger.slice(0, 10))) === "active" && stateOf(run) === "held" && RUN_STATES.includes(stateOf(waiting)));
+		const mid = new otlp.OtlpExporter({ endpoint: "http://127.0.0.1:1" });
+		addStateGauge(mid, waiting, at(2));
+		const midPoint = gv(mid)[0].gauge.dataPoints[0];
+		t("a live point carries no terminal reason and the transition time", gAttr(midPoint, "atelier.run.state") === "waiting_ci" && gAttr(midPoint, "atelier.reason_bucket") === undefined
+			&& midPoint.asDouble === Number(at(2)) / 1e9);
 		const long = counterPoints(0n, 5n * 3600n * 1_000_000_000n, [{}], () => 1);
 		t("a 5 h run keeps at most 480 counter points per series", long.length <= 480 && long.at(-1).value === 1);
 	}
@@ -931,18 +1009,28 @@ async function selfTest() {
 		process.env.ATELIER_RUN_DIR = dir;
 		process.env.ATELIER_SMOKE = "1"; // every run this test exports is a test run
 		delete process.env.ATELIER_TELEMETRY;
+		for (const k of ["ATELIER_OTLP_ENDPOINT", "PR_REVIEWER_OTLP_ENDPOINT", "OTEL_EXPORTER_OTLP_ENDPOINT"]) delete process.env[k]; // a test never reaches the host's backend
 		const first = await markPreflight({ startNs: nowNs(), status: "ok", gaps: [], model: "claude-opus-5-5", ticket: "AI-3112", task: "Fix the PR column" });
 		t("preflight begins a run in ATELIER_RUN_DIR and opens build", first === dir && readLedger(dir).at(-1).name === "build");
 		await markCompanions({ decision: "proceed", tier: "Lite", skipped: [], pr });
 		t("the PR is on the run as soon as --companions names it", buildRun(readLedger(dir)).facts.pr_url === pr);
 		const none = await markDecision({ stage: "build", decision: "proceed", head: "abc1234", pr }, env);
 		t("a proceed does not end the run", none === null && !isFinished(readLedger(dir)));
+		const gaugeOf = (r) => r.body?.resourceMetrics?.[0]?.scopeMetrics?.[0]?.metrics?.find((m) => m.name === STATE_GAUGE)?.gauge?.dataPoints?.[0];
+		const live = gaugeOf(received.at(-1) ?? {});
+		const liveAttr = (k) => live?.attributes?.find((x) => x.key === k)?.value?.stringValue;
+		t("a Build proceed exports the run at once: active at ready, work.ref = the PR, value = epoch seconds", live && liveAttr("atelier.run.state") === "active"
+			&& liveAttr("atelier.work.ref") === pr && liveAttr("atelier.stage.name") === "ready" && live.asDouble > 1.7e9 && live.asDouble < 4e9, JSON.stringify(live));
+		const base = received.length;
 		const code = await runWait("ci", [process.execPath, "-e", "process.exit(3)"]);
 		t("wait runs the command and returns its exit code", code === 3 && readLedger(dir).filter((r) => r.t === "wait").length === 2);
 		await markGate({ result: { decision: "pass", user_visible: true, has_flag_contract: true }, contractOnly: false });
 		const out = await markDecision({ stage: "merge", decision: "proceed", reason: "merged deadbee", head: "abc1234", pr }, env);
-		t("a merge proceed finishes and exports traces then metrics", out?.exported === true && received.map((r) => r.path).join() === "/v1/traces,/v1/metrics", JSON.stringify(out));
-		const root = received[0]?.body?.resourceSpans?.[0]?.scopeSpans?.[0];
+		t("a merge proceed finishes and exports traces then metrics", out?.exported === true && received.slice(base).map((r) => r.path).join() === "/v1/traces,/v1/metrics", JSON.stringify(out));
+		const done0 = gaugeOf(received.at(-1) ?? {});
+		t("the finished run's own export carries its terminal state: merged", done0?.attributes?.some((x) => x.key === "atelier.run.state" && x.value.stringValue === "merged")
+			&& done0.attributes.some((x) => x.key === "atelier.reason_bucket" && x.value.stringValue === "merged"));
+		const root = received[base]?.body?.resourceSpans?.[0]?.scopeSpans?.[0];
 		t("the received scope is agent-skills/atelier and the root says merged", root?.scope?.name === SCOPE_NAME && root?.spans?.[0]?.attributes?.some((x) => x.key === "atelier.run.outcome" && x.value.stringValue === "merged"));
 		const ra = (k) => root?.spans?.[0]?.attributes?.find((x) => x.key === k)?.value;
 		t("the root names the work: ticket, task, work.ref = the PR", ra("atelier.ticket.id")?.stringValue === "AI-3112" && ra("atelier.task.title")?.stringValue === "Fix the PR column"
@@ -950,7 +1038,14 @@ async function selfTest() {
 		t("ATELIER_SMOKE marks the exported run smoke, with its reason", ra("atelier.smoke")?.boolValue === true && ra("atelier.smoke_reason")?.stringValue === "env");
 		t("the summary file is written", JSON.parse(readFileSync(join(dir, SUMMARY_FILE), "utf8")).outcome === "merged");
 		const again = await finishRun(dir, {}, env);
-		t("a second finish sends nothing", again.skipped === "already exported" && received.length === 2);
+		t("a second finish sends nothing", again.skipped === "already exported" && received.length === base + 2);
+		// A real PR recorded from a cwd with no `origin` is not a scratch run: its URL names the repo.
+		const noOrigin = join(dir, "no-origin");
+		await markDecision({ stage: "build", decision: "proceed", pr: "https://github.com/acme/web/pull/9", cwd: dir, runDir: noOrigin }, {});
+		const nf = buildRun(readLedger(noOrigin)).facts;
+		t("✓ a --record with a PR URL and no origin remote is a real run for the PR's repo", nf.smoke !== true && nf.repo === "acme/web" && nf.pr_number === 9, JSON.stringify(nf));
+		await markDecision({ stage: "build", decision: "proceed", cwd: dir, runDir: join(dir, "no-origin-no-pr") }, {});
+		t("✗ no origin and no PR stays a scratch run", buildRun(readLedger(join(dir, "no-origin-no-pr"))).facts.smoke_reason === "no-remote");
 		// A run left open is exported as abandoned when the next one begins.
 		await markPreflight({ startNs: nowNs(), status: "ok", pr });
 		await markNext({ stage: "ready", state: { pr, stage: "ready", stages: { ready: { decision: "hold", at: new Date(Date.now() - 3600_000).toISOString(), reason: "CI not run: draft" } } } });
