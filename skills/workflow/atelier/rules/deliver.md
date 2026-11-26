@@ -1,7 +1,7 @@
 ---
-title: Deliver — follow the merge into the default-branch pipeline; fix a red one once, then revert
+title: Deliver — follow the merge into the default-branch pipeline; fix a red one once, then revert; verify a no-flag deploy
 impact: HIGH
-tags: [atelier, deliver, pipeline, post-merge, ci, release, revert]
+tags: [atelier, deliver, pipeline, post-merge, ci, release, revert, deployment-verify]
 ---
 
 # Deliver
@@ -9,6 +9,7 @@ tags: [atelier, deliver, pipeline, post-merge, ci, release, revert]
 A merged PR is not delivered until the pipeline GitHub starts for the merge commit on the default branch has gone green.
 That pipeline builds, versions, and releases the change, and PR CI does not exercise all of it: a release job that only runs on `main` can fail on a PR that was green.
 Deliver runs after the merge, reads that pipeline with `scripts/pipeline.mjs`, and starts one bounded fix when it is red; when the fix does not turn it green, it reverts the merge through a PR.
+Once the pipeline is green, it [verifies](#verify) a change with no flag on the deploy itself, with `deployment-verify`, and reverts it through the same lane when that verify asks a human to roll back.
 **Why:** [`../references/design.md`](../references/design.md#delivery).
 
 ## Run
@@ -23,7 +24,7 @@ The wait is `pipeline.timeout_minutes` (default 20; `--wait <minutes>` overrides
 
 | Exit | Line | Deliver decision |
 | --- | --- | --- |
-| 0 | `PIPELINE: green` | `proceed`, reason `pipeline green <run url>` |
+| 0 | `PIPELINE: green` | [Verify](#verify); when it is skipped, `proceed`, reason `pipeline green <run url>` |
 | 3 | `PIPELINE: cancelled` | `hold`, reason = the line: a concurrency group usually cancelled it for a later push; `Needs you:` names that later run to read, never a fix |
 | 3 | `PIPELINE: pending` after `--wait` | `hold`, reason = the line, `Needs you:` names the run to watch |
 | 1 | `PIPELINE: none` | `hold`, reason `no pipeline run for <sha>`: the repo may not run one on merge; the user confirms |
@@ -33,6 +34,41 @@ The wait is `pipeline.timeout_minutes` (default 20; `--wait <minutes>` overrides
 A required job that is `skipped` counts as red: a job that should always run but skipped means a step before it failed, and a green run hides that.
 Name a job in `required_jobs` only when it runs on every merge: a job gated on "a release is due" also skips when nothing is due, and would read red.
 A repo with no `pipeline:` block reads every run of the merge commit and requires none by name, so only a failed run or job is red.
+
+## Verify
+
+A green pipeline proves the release built, not that the deployed change keeps working.
+In a repo with a hosted production service, every merged PR carries a `deployment-verify:v1` contract or a `deployment-verify:none` opt-out ([`merge-gate.md`](./merge-gate.md#contract-half)); Deliver runs `deployment-verify`'s controller for a contract with **no flag**, which compares before and after the deploy and rolls back by itself only through a `release.yml` platform rollback.
+`scripts/verify-deploy.mjs` decides whether to run, runs `tick.mjs`, and maps its status line; it owns no verdict.
+
+```bash
+V="${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/verify-deploy.mjs"
+node "$V" --pr <pr-url>                 # in a session: start it in the background, record when it exits
+node "$V" --pr <pr-url> --unattended    # one tick, then exit; the scheduled tick finishes the rollout
+# REVERT: yes — <reason>                 (only when the revert lane takes over)
+# VERIFY: proceed|hold|failed|skipped — <reason>
+```
+
+| Situation | Run |
+| --- | --- |
+| A session | `verify-deploy.mjs --pr <url>` with the Bash tool's `run_in_background`: it runs `tick.mjs --pr <n> --run`, which waits on telemetry for the deploy and each window. Record the result when it exits. Never a foreground tick loop |
+| `--unattended` | `verify-deploy.mjs --pr <url> --unattended`: it labels the PR `deployment-verify`, ticks once, and exits. The repo's scheduled `tick.mjs --all --unattended` (with `release.yml` → `on_exception`) finishes the rollout; record `hold`, reason `verifying …` |
+| A re-run of `/atelier <merged-pr>` | The same command: a finished rollout is read from the PR's deployment-verify comment and never ticked again |
+
+| Line | Deliver decision |
+| --- | --- |
+| `VERIFY: skipped` | `proceed`, reason `pipeline green <run url>; verify skipped: <reason>` (a flag contract, an opt-out, no contract, or no hosted service) |
+| `VERIFY: proceed` (PASS) | `proceed`, reason `verified PASS; pipeline green <run url>` |
+| `VERIFY: hold` (INCONCLUSIVE, STOPPED, a hold, still running) | `hold`, reason = the line; `Needs you:` names the deployment-verify report comment on the PR |
+| `VERIFY: failed` (ROLLED_BACK, ESCALATE) | `failed`, reason = the line; `Needs you:` carries the report's `next:` line |
+| `REVERT: yes`, then `VERIFY: failed` (ESCALATE `rollback needs a human`) | the [revert lane](#revert-lane) on the merged PR's squash sha, under `policies.rollback`; its revert PR's green pipeline records `proceed`, reason `reverted <revert PR url>` |
+
+```text
+✗ pipeline green → Deliver: green, while the deploy doubled /memories' latency and nobody looked
+✓ pipeline green → verify-deploy.mjs (background) → VERIFY: failed — ESCALATE rollback needs a human → revert lane → Deliver: reverted <url>
+✗ verify-deploy.mjs sets a flag, or Deliver runs /deployment-verify on a flag contract
+✓ flag contract → VERIFY: skipped — flag f: a human steps it with /deployment-verify → Step 4's rollout row
+```
 
 ## Fix lane
 
@@ -66,15 +102,15 @@ The lane exists because the pipeline broke after review, so the fix gets its own
 ## Revert lane
 
 Each merged PR is reverted at most once, and a revert PR is never reverted: the lane backs out the merged change through a PR with the same gates, never a push to the default branch.
-Atelier never runs `deployment-verify` and never flips a flag: a flag or platform rollback of a rolled-out change stays with `deployment-verify`, and a code revert stays here.
+Atelier never flips a flag: a flag or platform rollback stays with `deployment-verify`, and a code revert stays here: after a red pipeline, or after a [Verify](#verify) that ended ESCALATE `rollback needs a human`.
 
 The rollback policy decides whether the lane acts: `~/.agents/aw/config.yml` → `policies.rollback`, overridden by `repos.<slug>.policies.rollback` (the same setting `deployment-verify` reads; its `rules/config.md`, § Policy, which spells out what `auto` means for a code revert).
 
 | `policies.rollback` | Do |
 | --- | --- |
-| `ask` (default) | Print the `PIPELINE:` line, the cause, and the revert plan, ask once, and revert on yes; on no, `hold` with the revert command under `Needs you:`. Under `--unattended`, do not revert: `hold`, reason `revert needs a human (policies.rollback: ask)` |
+| `ask` (default) | Print the `PIPELINE:` or `VERIFY:` line, the cause, and the revert plan, ask once, and revert on yes; on no, `hold` with the revert command under `Needs you:`. Under `--unattended`, do not revert: `hold`, reason `revert needs a human (policies.rollback: ask)` |
 | `auto` | Revert without asking |
-| `never` | Do not revert: `failed`, reason = the `PIPELINE:` line, with the revert command under `Needs you:` |
+| `never` | Do not revert: `failed`, reason = the `PIPELINE:` or `VERIFY:` line, with the revert command under `Needs you:` |
 
 On a `revert-first` first red, a row that does not revert (`never`, a declined or unattended `ask`) runs the fix lane instead of stopping ([Order](#order)); the `hold` or `failed` above applies only when there is no fix round left.
 
@@ -123,7 +159,7 @@ It is display-only: `--next` never reads it, and it writes no telemetry span.
 ✓ state.mjs --record --stage deliver --decision failed --head 4f1c2d9 --reason "main red after one fix; reverted by #202"
 ```
 
-Write one `bus` event per decision ([`decision-log.md`](./decision-log.md)) and print the terminal contract's `- Deliver: [green <run url> | red: <reason> | fix PR <url> | revert PR <url> | reverted <revert PR url> | skipped: <reason> | not reached]` line.
+Write one `bus` event per decision ([`decision-log.md`](./decision-log.md)) and print the terminal contract's `- Deliver: [green <run url> | verified PASS <run url> | verifying: <reason> | verify failed: <reason> | red: <reason> | fix PR <url> | revert PR <url> | reverted <revert PR url> | skipped: <reason> | not reached]` line.
 A `hold` or `failed` result also goes under `Needs you:`.
 Re-running `/atelier <merged-pr-url>` runs Deliver on the merge commit, which is how a session that died mid-wait resumes.
 Skip Deliver, printing `skipped: <reason>`, when the merge was refused or held, when the PR has no merge commit, or when the user passes `--no-deliver`.

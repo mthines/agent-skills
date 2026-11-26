@@ -4,14 +4,16 @@ description: >
   Takes one change from request to merged PR by sequencing existing skills —
   aw builds the draft PR, prepare gets it green, a deterministic gate allows
   the squash-merge only when a user-visible diff ships behind a
-  deployment-verify flag contract — then reads the default-branch pipeline and fixes a red one once, and says
-  what a human does next. Resumable from a sticky PR comment; invoke with /atelier.
+  deployment-verify flag contract (and, in a repo with a hosted service, every
+  diff carries a contract or an opt-out) — then reads the default-branch
+  pipeline, fixes a red one once, verifies a no-flag change on the deploy with
+  deployment-verify, and says what a human does next. Resumable from a sticky PR comment; invoke with /atelier.
 argument-hint: 'setup | <request> | <pr-url|#n> [--ticket <id|url>] [--unattended] [--keep-draft] [--accept-gaps] [--accept-skip <name,…>] [--no-deliver]'
 license: MIT
 disable-model-invocation: true
 metadata:
   author: mthines
-  version: '0.7.0'
+  version: '0.8.0'
   workflow_type: orchestrator
   tags: [workflow, orchestrator, merge, gate, deployment-verify, lorekit, resumable, telemetry]
 ---
@@ -43,7 +45,7 @@ It owns no build, review, verify, or deploy logic: each stage is one delegation,
 | `--unattended` | No human is present: Build forwards `--no-confirm` to `aw` and tells it to run `interview` with `--non-interactive`, so a `blocking` question ends the run as `failed` instead of waiting. |
 | `--keep-draft` | Ready leaves the PR a draft; when CI did not run on the draft (`ci-ran.mjs` prints `CI: not-run`), Ready records `hold` (reason `CI not run: draft — <its reason>`). |
 | `--max-wait <minutes>` | The longest one [wait for CI](#waiting-for-ci) or [wait for approval](#waiting-for-approval) lasts (default 30). `0` never waits: pending CI or a pending approval records a `hold`, as before. |
-| `--no-deliver` | Stop at the merge: skip the [Deliver](#after-the-merge) step (the default-branch pipeline read, its one fix, and the revert). |
+| `--no-deliver` | Stop at the merge: skip the [Deliver](#after-the-merge) step (the default-branch pipeline read, its one fix, the revert, and the deploy verify). |
 | `--accept-gaps` | The user accepts every [preflight](#preflight) gap: Build runs even when a gap leaves a stated criterion unprovable; the gaps ride into `Degraded:`. |
 | `--accept-skip <name,…>` | The user accepts that these [companions](#after-build-returns) did not run (`review-loop`, `create-pr`, `quality-pass`, `aw-verify`); only the user passes it, never an agent, and the decision event records it. |
 
@@ -190,7 +192,7 @@ A Build that fails before a PR exists has nowhere to record: skip step 1, write 
 The build suffix, appended verbatim to every request:
 
 ```text
-Atelier merges this PR. A user-visible change must sit behind a feature flag (reuse an existing flag when one fits), and the PR body must carry a deployment-verify:v1 contract naming it: draft it with `node <deployment-verify>/scripts/tick.mjs --draft-contract --pr <n>`, then fill "flag": {"key": "<flag>"}, adding "provider" and "cohort" only when .agents/aw/release.yml declares a provider, and no "cohort" for a `rollout: pr` provider (format: deployment-verify rules/contract.md).
+Atelier merges this PR. A user-visible change must sit behind a feature flag (reuse an existing flag when one fits), and the PR body must carry a deployment-verify:v1 contract naming it: draft it with `node <deployment-verify>/scripts/tick.mjs --draft-contract --pr <n>`, then fill "flag": {"key": "<flag>"}, adding "provider" and "cohort" only when .agents/aw/release.yml declares a provider, and no "cohort" for a `rollout: pr` provider (format: deployment-verify rules/contract.md). When .agents/aw/release.yml's production environment detects deploys (its `deploy.detect` is not `manual`), every other change carries a contract too: the same draft with "service" and "root_spans" and no "flag", measured before and after its deploy; a change that deploys nothing carries `<!-- deployment-verify:none — <why nothing deployed can change> -->` instead.
 ```
 
 Under `--unattended` add the line `No human is present: run interview with --non-interactive; a blocking question ends the run.`
@@ -405,14 +407,14 @@ fi
 2. Exit 2, or no LoreKit → `Degraded: quality finding outcomes — not recorded (<stderr or lorekit unreachable>)`; the merge decision stands.
 3. Never run it on a merge that did not happen: a refused or held merge scores nothing.
 
-Then run Deliver ([`rules/deliver.md`](./rules/deliver.md)) unless `--no-deliver`: the merge is not the end while the default-branch pipeline is red.
+Then run Deliver ([`rules/deliver.md`](./rules/deliver.md)) unless `--no-deliver`: the merge is not the end while the default-branch pipeline is red, or while the deploy of a no-flag change is unverified ([Verify](./rules/deliver.md#verify)).
 Under `--no-deliver`, still record Deliver `skipped` (reason `--no-deliver`) on a merged PR, so the comment does not stay on "Next: Deliver checks…".
-Record Deliver's result on the state comment with `--record --stage deliver` (same command as [Stages](#stages) step 1, `--head` the merge commit): `proceed` for green, `hold` while a fix PR is open, `failed` for red or reverted, `skipped` with its reason.
+Record Deliver's result on the state comment with `--record --stage deliver` (same command as [Stages](#stages) step 1, `--head` the merge commit): `proceed` for green (and verified, when Verify ran), `hold` while a fix PR is open or the verify is still running, `failed` for red, reverted, or a failed verify, `skipped` with its reason.
 It is display-only: `--next` stops at the merge, so Deliver also reports through a `bus` event and the terminal contract's `Deliver:` line.
 
 ## Step 4 — Stop
 
-Atelier never flips a flag and never runs `deployment-verify`.
+Atelier never flips a flag: Deliver runs `deployment-verify` only for a contract with no flag ([Verify](./rules/deliver.md#verify)), and a flag rollout stays with a human.
 After a merge, put the next human step under `Needs you:`, from the first row that matches:
 
 | The merged PR | `Needs you:` |
@@ -420,7 +422,8 @@ After a merge, put the next human step under `Needs you:`, from the first row th
 | has a contract whose provider `release.yml` declares `rollout: pr` | `open a follow-up PR that only flips <flag> in <the provider's flip>, with a contract that has no flag, then run /deployment-verify <flip-pr> to measure it before/after` |
 | has a contract whose flag provider `release.yml` declares | `run /deployment-verify <pr> to roll <flag> out; when release.yml sets hold_after, the rollout waits there for /deployment-verify approve <pr> (tick.mjs --approve) or override <pr> (--override)` |
 | has a contract the gate passed with the no-provider warning | `flip <flag> on by hand — deployment-verify cannot step it here (no provider)` |
-| has no user-visible diff | `nothing — not user-visible` |
+| Deliver's verify ended `hold` or `failed` | the `VERIFY:` line and what [Verify](./rules/deliver.md#verify) puts under `Needs you:` for it |
+| has no user-visible diff | `nothing — not user-visible`, or `nothing — verified <outcome>` after Verify passed |
 
 ## Terminal contract
 
@@ -432,7 +435,7 @@ ATELIER RUN
 - PR: [URL | none]
 - Ticket: [<id> | none — <why>]
 - Merge: [merged <sha> | refused: <reason> | not reached]
-- Deliver: [green <run url> | red: <reason> | fix PR <url> | revert PR <url> | reverted <revert PR url> | skipped: <reason> | not reached]
+- Deliver: [green <run url> | verified PASS <run url> | verifying: <reason> | verify failed: <reason> | red: <reason> | fix PR <url> | revert PR <url> | reverted <revert PR url> | skipped: <reason> | not reached]
 - Degraded: [steps skipped and why, or "none"]
 - Needs you: [the next human step, or "nothing"]
 ```
@@ -442,7 +445,7 @@ ATELIER RUN
 - **Delegate, never re-implement.** A stage that needs build, fix, review, verify, or merge logic calls the owning skill.
 - **Scripts decide.** The next stage comes from `state.mjs --next`, the merge from `merge-gate.mjs`, outcomes from `outcomes.mjs`; never from your judgment.
 - **LoreKit is evidence, never a gate.** A failed write is one `Degraded:` line; the stage outcome stands.
-- **No flag flips, no deploys.** Those belong to a human or `/deployment-verify`.
+- **No flag flips, no deploys.** Those belong to a human or `/deployment-verify`; Deliver runs `deployment-verify` only on a contract with no flag, where nothing is flipped.
 - **Top level only.** Never dispatch `/atelier` or its Build into a sub-agent; a nested run drops companions.
 - **Telemetry never decides.** The trace records stages; no stage reads it, and a failed export is never a `Degraded:` item.
 - **Only the user waives.** A skipped companion or a blocking preflight gap is overridden only by the user's `--accept-skip` or `--accept-gaps`, never by your judgment.

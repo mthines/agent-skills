@@ -1,5 +1,5 @@
 ---
-title: Merge gate — green CI, proven criteria, and a flag contract for a user-visible diff
+title: Merge gate — green CI, proven criteria, a flag contract for a user-visible diff, and a contract or opt-out for every diff to a hosted service
 impact: HIGH
 tags: [atelier, merge, gate, deployment-verify, ui]
 ---
@@ -26,11 +26,17 @@ Offline (`--files … --body-file …`) it needs `--rollup-file <json>` (a saved
 ✓ MERGE_GATE: refuse — no proof the criteria hold: no intent region: publish the criteria (intent.md § Step 6) (+1 more)
 ```
 
-The diff and the body decide the contract half:
+## Contract half
+
+The diff, the body, and the repo decide the contract half.
+A repo is **hosted** when `.agents/aw/release.yml` loads a `production` environment whose `deploy.detect` is set and is not `manual`: there is a deployed service `deployment-verify` can watch, and Deliver [verifies](./deliver.md#verify) every no-flag change on it.
 
 | Diff | PR body | Exit | Decision |
 | --- | --- | --- | --- |
-| not user-visible (docs, tooling, tests) | anything | 0 | `pass` |
+| not user-visible (docs, tooling, tests), repo not hosted (`detect: manual`, no `release.yml`) | anything | 0 | `pass` |
+| not user-visible, hosted | a valid `deployment-verify:v1` contract, with a `flag` or without one (measured before/after the deploy) | 0 | `pass` |
+| not user-visible, hosted | no contract and `<!-- deployment-verify:none — <reason> -->` with a non-empty reason | 0 | `pass`, the reason quoted |
+| not user-visible, hosted | neither, an opt-out with no reason, or a contract `deployment-verify` would refuse | 1 | `refuse`, naming both fixes |
 | user-visible | a valid `deployment-verify:v1` contract with `flag.key` whose `flag.provider` `release.yml` declares | 0 | `pass` |
 | user-visible | a contract with `flag.key` and no provider to step it (no `release.yml`, `providers: []`, or no `flag.provider`) | 0 | `pass` + `warning: deployment-verify cannot step this flag here: no provider; a human flips it` |
 | user-visible | no contract, a contract that does not parse, one with no `flag`, a `flag.provider` that a non-empty `providers` list lacks (a typo), or any other `deployment-verify` refusal | 1 | `refuse` |
@@ -48,8 +54,17 @@ The diff and the body decide the contract half:
 ```
 
 ```text
-✗ docs/guide.md only, no contract → refuse
+✗ docs/guide.md only, no contract, repo not hosted → refuse
 ✓ MERGE_GATE: pass — not user-visible — no UI file in the diff
+```
+
+The opt-out is the author's word that nothing deployed can change: docs, CI config, a skill file. It never passes a user-visible diff, which still needs a flag.
+
+```text
+✗ hosted repo, worker change, no contract → merge          # Deliver has nothing to verify the deploy against
+✓ MERGE_GATE: refuse — hosted production service, neither a deployment-verify:v1 contract nor a deployment-verify:none marker in the PR body
+✓ hosted repo, README only, <!-- deployment-verify:none — docs only, nothing deploys --> → MERGE_GATE: pass — deploys nothing to verify: docs only, nothing deploys
+✗ <!-- deployment-verify:none — -->                          # refuse: an opt-out says why
 ```
 
 ```text
