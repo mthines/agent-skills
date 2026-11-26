@@ -63,6 +63,7 @@ Read recent PRs' deployments and bot comments (`gh api repos/{owner}/{repo}/depl
 
 Propose `ui.yml` `surface` only when `ui-verify`'s `is-ui-diff.mjs` defaults would be wrong:
 plain `.ts`/`.js` are UI in a frontend-only repo; only some monorepo packages are UI; components live in a non-default directory.
+In a monorepo whose packages are proven differently (a web app on the preview, a service on the local stack, docs by checks), propose a `verify:` block ([`config.md § verify`](./config.md#verify--path-scoped-environments)); one environment for everything needs none.
 
 ### A7 — Telemetry
 
@@ -113,7 +114,7 @@ Ask only what Phase A did not settle; pre-fill the detected value as the first o
 
 ## Phase C — Probe the login
 
-Per `storage-state` environment and per identity, print the command from [`auth.md`](./auth.md#the-agent-reads-a-session-it-does-not-type-the-login) and wait for the user to run it; then check the state file is new and `authed_check` is visible. A failure shows the script's `final page:` / `page errors:` lines and returns to Phase B. Offer the scheduled refresh once a login works. A preview with no resolvable PR → `unconfirmed (no preview yet)`.
+Per `storage-state` environment and per identity, when the login hook is installed, ask it as [`auth.md § The login hook`](./auth.md#the-login-hook-autonomous-sign-in) says; otherwise print the command from [`auth.md`](./auth.md#the-agent-reads-a-session-it-does-not-type-the-login) and wait for the user to run it; then check the state file is new and `authed_check` is visible. A failure shows the script's `final page:` / `page errors:` lines and returns to Phase B. Offer the scheduled refresh once a login works. A preview with no resolvable PR → `unconfirmed (no preview yet)`.
 
 ## Phase D — Write
 
@@ -121,6 +122,7 @@ Per `storage-state` environment and per identity, print the command from [`auth.
 2. Copy the chosen login script from [`templates/scripts/`](../templates/scripts/) to `.agents/aw/scripts/auth/`.
 3. Personal values (a dataset only you export to, the MCP server key, the credential provider, policies) → `~/.agents/aw/config.yml` under `repos.<slug>` and `policies`; merge, never drop another repo's block.
 4. Gitignore the state directory: `grep -qx '.auth/' .gitignore || echo '.auth/' >> .gitignore` (or the reused convention's directory).
+   When a `storage-state` environment's login runs from env credentials, also gitignore `.agents/aw/.env.test-user`, tell the user to put `TESTING_USERNAME` and `TESTING_PASSWORD` in it, and print the login hook snippet ([`auth.md § Install the hook`](./auth.md#install-the-hook-once-per-machine)) for them to install; never write the env file or the hook settings yourself.
 5. First run: show every file before writing. Re-run: show a unified diff and write only after the user confirms; an empty diff → `No changes — .agents/aw is up to date.`
 6. Never overwrite an existing state file without asking.
 7. Do not commit; print the paths for the user to review and commit.

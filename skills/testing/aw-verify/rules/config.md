@@ -17,7 +17,7 @@ It is committed, so a teammate who clones the repo runs `/aw-verify` with no set
 
 ## Contents
 
-[Files](#files) · [Resolve](#resolve-the-config-every-skill-before-any-other-step) · [Personal keys](#personal-keys) · [`environments.yml`](#environmentsyml) · [`flags`](#flags) · [`ui.yml`](#uiyml) · [`telemetry.yml`](#telemetryyml) · [Rules](#rules)
+[Files](#files) · [Resolve](#resolve-the-config-every-skill-before-any-other-step) · [Personal keys](#personal-keys) · [`environments.yml`](#environmentsyml) · [`flags`](#flags) · [`ui.yml`](#uiyml) · [`verify`](#verify--path-scoped-environments) · [`telemetry.yml`](#telemetryyml) · [Rules](#rules)
 
 ## Files
 
@@ -30,6 +30,7 @@ It is committed, so a teammate who clones the repo runs `/aw-verify` with no set
 | `.agents/aw/ux.md` | yes | `ux` (via `aw`'s quality pass) | The house UX rubric: `when <situation>, we <do X>, not <Y>` lines; format in the `ux` skill's `rules/house-rubric.md` |
 | `.agents/aw/release.yml` | yes | `deployment-verify` | Deploy detection, flag providers, rollback commands, rollout steps, thresholds per environment, and the `pipeline:` block `atelier`'s Deliver stage reads |
 | `.agents/aw/scripts/` | yes | `environments.yml` commands | Runnable helpers: `auth/login-headful.mjs`, `auth/login-credentials.mjs`, `auth/refresh-preview.mjs`, `flags/` set-and-restore scripts, seed scripts. No secrets |
+| `.agents/aw/.env.test-user` | never (gitignored) | `login-hook.mjs` only, never an agent | `TESTING_USERNAME`, `TESTING_PASSWORD` for the fixture test user ([`auth.md § The login hook`](./auth.md#the-login-hook-autonomous-sign-in)) |
 | `~/.agents/aw/config.yml` | never | every skill in the suite | Your policies, and your per-repo overrides under `repos.<owner>/<name>` |
 
 Templates: [`templates/aw/`](../templates/aw/).
@@ -164,6 +165,36 @@ adversarial:
   deny_actions: ['/reset workspace/i']
   mock_endpoints: ['POST /api/invites/**']
   mask_testids: [user-avatar]
+verify:                               # optional: which environment proves a diff, and when — below
+  rules:
+    - { paths: ['apps/web/**', 'packages/ui/**'], env: preview, when: after-pr }
+    - { paths: ['services/**'], env: local }
+  default: { env: checks }
+```
+
+### `verify` — path-scoped environments
+
+A monorepo proves a web change on the PR preview and a service change on the local stack; `verify:` says which, per path.
+
+| Key | Meaning |
+| --- | --- |
+| `rules` | Ordered list of `{paths, env, when}`. The **first** rule whose `paths` globs cover **every** changed file wins; a diff that spans two rules matches neither |
+| `default` | `{env, when}` (or a bare env name), used when no rule matches or there are no `rules`; it takes no `paths` |
+| `env` | `preview` (browser run on the PR preview), `local` (browser run on the local stack), `checks` (recorded test runs, [`checks-mode.md`](./checks-mode.md)) |
+| `when` | `before-pr` (default) or `after-pr`: the run needs the PR's own deployment, so the PR opens first (the `autonomous-workflow` skill's *Lite verify*) |
+
+No `verify:` block, or rules that match nothing with no `default` → `VERIFY_ENV: none`: the caller keeps today's routing (`is-ui-diff.mjs`, then `local` or `checks`).
+Callers never read the block themselves; they run [`verify-env.mjs`](../scripts/verify-env.mjs) and read its last line:
+
+```bash
+node "${AW_VERIFY_DIR:-$HOME/.claude/skills/aw-verify}/scripts/verify-env.mjs" --base origin/main   # VERIFY_ENV: preview after-pr | … | none
+```
+
+```yaml
+# ✗ Wrong — a catch-all rule: paths are for scoping, a fallback has none
+rules: [{ paths: ['**'], env: checks }]
+# ✓ Right
+default: { env: checks }
 ```
 
 ## `telemetry.yml`

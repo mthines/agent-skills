@@ -247,8 +247,17 @@ VC="${AW_VERIFY_DIR:-$HOME/.claude/skills/aw-verify}/scripts/verify-comment.mjs"
 node "$VC" --pr <pr-url> --check --proven [--ui]   # --ui when the gate's user_visible is true; last line: report complete
 ```
 
+Then ask the repo's path rules which environment proves this PR (aw-verify's `rules/config.md` § verify), from the PR's checkout:
+
+```bash
+node "${AW_VERIFY_DIR:-$HOME/.claude/skills/aw-verify}/scripts/verify-env.mjs" --base origin/<base>   # last line: VERIFY_ENV: …
+```
+
+`VERIFY_ENV: preview …` → add `--browser` to the check: a checks-only or local report, or a preview run on an older commit, is not a browser report for this head.
 Exit 0 → Ready continues.
-Exit 1 → run `Skill("aw-verify", "run checks <pr-url>")` for a non-UI diff (recorded test runs prove each criterion; no browser) or `Skill("aw-verify", "run preview <pr-url>")` for a UI diff, then check again; still exit 1 → Ready `failed`, reason `proof: <first problem it printed>`.
+Exit 1 → run the proof the rule names, then check again: `preview` (or `--browser` refused) → `Skill("aw-verify", "run preview <pr-url>")`; `local` → `run local <pr-url>`; `checks`, or `none` on a non-UI diff → `run checks <pr-url>` (recorded test runs prove each criterion; no browser); `none` on a UI diff → `run preview <pr-url>`.
+A stale preview session signs in through aw-verify's login hook, never by asking the user; `LOGIN: no-hook` or `LOGIN: failed` → Ready `hold`, reason `proof: sign-in — <its line>`, `Needs you:` the `!` command it prints.
+Still exit 1 → Ready `failed`, reason `proof: <first problem it printed>`.
 Never write the report or tick a criterion by hand to pass it: only `verify-comment.mjs` writes the regions, from a run.
 
 ```text
