@@ -35,8 +35,7 @@
 // Exit: 0 ok, 2 error.
 
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { ENDINGS, STAGE_TITLE, altText, cardKey, outcomeOf, outcomes, verdict } from "./card.mjs";

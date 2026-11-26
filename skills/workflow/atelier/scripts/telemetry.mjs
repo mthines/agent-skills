@@ -595,9 +595,9 @@ export function lastEvent(records, last) {
 	return last.t === "stage" ? `stage ${stage}` : `stage ${stage} · ${last.t}`;
 }
 
-// Did the next run pick up the same work? The same PR, else the same ticket, else the same repo and branch.
+// Did the next run pick up the same work? The strongest key both runs carry decides: the PR, else the ticket, else
+// the repo and branch, so a run that opened a PR and a re-run from its ticket are the same work.
 export function sameWork(a = {}, b = {}) {
-	// Compare the strongest key both runs carry: a run that opened a PR and a re-run from the ticket are the same work.
 	if (a.pr_url && b.pr_url) return a.pr_url === b.pr_url;
 	if (a.ticket_id && b.ticket_id) return a.ticket_id === b.ticket_id;
 	return !!a.repo && !!a.branch && a.repo === b.repo && a.branch === b.branch;
