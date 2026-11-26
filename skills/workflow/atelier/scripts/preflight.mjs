@@ -217,7 +217,43 @@ export const TRACKER = join(".agents", "aw", "tracker.yml");
 const NO_OTEL = new Set(["logs", "none"]);
 export const noOtel = (checks) => NO_OTEL.has(checks.find((c) => c.name === "telemetry")?.backend);
 
-export function setupPlan(checks, { profile = true, pipeline = true, tracker = true, accepted = {} } = {}) {
+// Does the repo's default branch require an approving review before a merge? A person's job when it does: atelier never
+// approves a PR, and never merges around the rule. `required` is true | false | null (could not read: say nothing).
+export function reviewRequirement(protection, rules) {
+	const counts = [];
+	const prot = protection?.required_pull_request_reviews;
+	if (prot) counts.push(Number(prot.required_approving_review_count ?? 0));
+	for (const r of Array.isArray(rules) ? rules : []) if (r?.type === "pull_request") counts.push(Number(r.parameters?.required_approving_review_count ?? 0));
+	if (counts.length) return { required: counts.some((n) => n > 0), count: Math.max(...counts) };
+	return protection === null && rules === null ? { required: null, count: 0 } : { required: false, count: 0 };
+}
+
+// The merge step of `/atelier setup`: it only reports, and writes nothing. No required review → atelier merges itself once the
+// merge gate passes and Build's review held; a required one is the only routine reason a person is needed.
+export function mergeStep(req) {
+	if (!req || req.required === null) return null;
+	if (req.required) return { kind: "manual", name: "merge", fix: `the default branch requires ${req.count} approving review(s): atelier holds the merge for a person (it never approves or bypasses); add an auto-approval check under approval.wait_for in .agents/aw/merge.yml to let it wait for one` };
+	return { kind: "decided", name: "merge", note: "no review is required on the default branch: atelier merges by itself once the merge gate passes (green CI, proof, contract) and Build's review converged; it holds only for a person where SKILL.md § When a person is needed says so" };
+}
+
+// Reads the default branch's protection and rulesets through gh; any failure is null (unknown), never a guess.
+export function readReviewRequirement(repo) {
+	const run = (args) => {
+		try {
+			return JSON.parse(execFileSync("gh", args, { cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 15_000 }));
+		} catch {
+			return null;
+		}
+	};
+	const branch = run(["repo", "view", "--json", "defaultBranchRef,nameWithOwner"]);
+	if (!branch?.nameWithOwner || !branch.defaultBranchRef?.name) return { required: null, count: 0 };
+	const base = `repos/${branch.nameWithOwner}`;
+	const protection = run(["api", `${base}/branches/${branch.defaultBranchRef.name}/protection`]);
+	const rules = run(["api", `${base}/rules/branches/${branch.defaultBranchRef.name}`]);
+	return reviewRequirement(protection, rules);
+}
+
+export function setupPlan(checks, { profile = true, pipeline = true, tracker = true, accepted = {}, review = null } = {}) {
 	// An accepted gap is the repo's answer, like providers: []; setup never re-asks it.
 	const gap = new Set(checks.filter((c) => !c.ok && !isDecided(c) && !accepted[c.name]).map((c) => c.name));
 	const steps = checks.filter(isDecided).map(() => ({
@@ -246,6 +282,8 @@ export function setupPlan(checks, { profile = true, pipeline = true, tracker = t
 			fix: `${ci.value} — remove the draft guard, or list opened, synchronize, reopened in the pull_request types; until then Ready undrafts to get CI`,
 		});
 	}
+	const merge = mergeStep(review);
+	if (merge) steps.push(merge);
 	return steps;
 }
 
@@ -495,6 +533,15 @@ async function selfTest() {
 	} finally {
 		rmSync(noPipe, { recursive: true, force: true });
 	}
+	const noRev = { required: false, count: 0 };
+	t("merge: no protection and no rules → no review required", JSON.stringify(reviewRequirement({}, [])) === JSON.stringify(noRev));
+	t("merge: branch protection with an approving review → required", reviewRequirement({ required_pull_request_reviews: { required_approving_review_count: 1 } }, []).required === true);
+	t("merge: a ruleset's pull_request rule counts too", reviewRequirement(null, [{ type: "pull_request", parameters: { required_approving_review_count: 2 } }]).count === 2);
+	t("merge: zero required approvals is not a required review", reviewRequirement({ required_pull_request_reviews: { required_approving_review_count: 0 } }, []).required === false);
+	t("merge: unreadable (both null) is unknown, never a guess", reviewRequirement(null, null).required === null && mergeStep(reviewRequirement(null, null)) === null);
+	t("merge: no required review is DECIDED auto-merge", /^DECIDED: merge — no review is required/.test(planLines(setupPlan([], { review: noRev })).at(-1)));
+	const mergeManual = planLines(setupPlan([], { review: { required: true, count: 1 } })).at(-1);
+	t("merge: a required review is one MANUAL line that never bypasses", /^MANUAL: merge — .*requires 1 approving review.*never approves or bypasses/.test(mergeManual), mergeManual);
 	t("setup: no gaps and a profile → nothing to delegate", planLines(setupPlan([telemetryCheck({ backend: "logs" })])).join() === "SETUP: nothing to delegate");
 	const declared = flagCheck({ present: true, config: { flags: { providers: [] } } });
 	const decidedPlan = planLines(setupPlan([declared]));
@@ -522,7 +569,7 @@ async function main() {
 		// Setup modes start no trace: they are not a run.
 		if (a.setup) {
 			const files = await setupState(repo);
-			const steps = setupPlan(checks, { ...files, accepted });
+			const steps = setupPlan(checks, { ...files, accepted, review: readReviewRequirement(repo) });
 			if (a.json) console.log(JSON.stringify({ checks, gaps, steps, files }, null, 2));
 			else console.log([table(checks, accepted), line, ...planLines(steps)].join("\n"));
 			return;
