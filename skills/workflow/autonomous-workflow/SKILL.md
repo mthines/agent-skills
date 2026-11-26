@@ -190,7 +190,7 @@ It reads the repo's path rules (`ui.yml` → `verify:`, aw-verify's `rules/confi
 
 | `VERIFY_RUN:` | Run |
 | --- | --- |
-| `checks before-pr` | step 0; on a UI diff with no `environments.yml`, step 3 |
+| `checks before-pr` | step 0; on a UI diff, step 3 |
 | `local before-pr` | step 1, whether or not the diff has a UI file: the stack, each criterion through the local UI and API, and the telemetry |
 | `local after-pr` | step 0 before the PR; after Phase 6 opens it, the after-PR run below with `run local <pr-url>` |
 | `preview after-pr` | step 0 before the PR; after Phase 6 opens it, the after-PR run below: a preview only exists once the PR does |
@@ -217,7 +217,7 @@ A failed criterion or `❌ not verified` re-enters Phase 3 under the same turn c
    Copy every `Degraded: flag <key> not restored …` line `aw-verify` printed into the run's `Degraded:` verbatim, and its restore command into `Needs you:`.
 2. A failed `ui:` criterion, a `❌ not verified` verdict, or a `telemetry:` AC whose receipt is `contradicts` re-enters Phase 3 under the same turn cap.
    Any other `telemetry:` receipt that is not `confirms` goes under `Degraded:`, as Full Step 4.1 leaves it unpassed.
-3. `VERIFY_RUN: checks before-pr` on a UI diff (no `.agents/aw/environments.yml`) → checks mode as in step 0, each `ui:` AC no test reaches recorded `unsatisfiable` (the verdict caps at `⚠️`; `create-pr` Step 6.4 authors the `ui-verify` spec block, so Phase 6's `--check --ui` still passes), `verify run: not configured` under `Degraded:`, and `run /aw-verify setup` under `Needs you:`; never block on setup.
+3. `VERIFY_RUN: checks before-pr` on a UI diff → checks mode as in step 0, each `ui:` AC no test reaches recorded `unsatisfiable` (the verdict caps at `⚠️`; `create-pr` Step 6.4 authors the `ui-verify` spec block, so Phase 6's `--check --ui` still passes), and, when `.agents/aw/environments.yml` is missing (`run_why` names it), `verify run: not configured` under `Degraded:` and `run /aw-verify setup` under `Needs you:`; never block on setup.
 4. Print the `verify run:` line from Full's `AW EVIDENCE` block ([`aw/rules/full-tier.md` § Step 4](./aw/rules/full-tier.md#step-4--verify-walkthrough-pr-evidence)) in Lite's `AW EVIDENCE` block.
 
 ```text
