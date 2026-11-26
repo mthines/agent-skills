@@ -1005,9 +1005,13 @@ function exception(config, event) {
 }
 
 async function runOne({ store, contract, config, sha, mergedAt, deployedAt, loop, decision = null, slug = null }) {
-	// A finished rollout is reported as stored: ticking it again would relabel and re-run on_exception.
+	// A finished rollout is reported as stored: ticking it again would re-run on_exception. A label still on it
+	// (re-added by a re-run, or a relabel that failed) comes off, or every scheduled --all would report it again.
 	const stored = store.read();
-	if (stored?.phase === "done" && !decision) return stored;
+	if (stored?.phase === "done" && !decision) {
+		if ((store.pr?.labels || []).some((l) => (l?.name ?? l) === LABEL)) store.finish();
+		return stored;
+	}
 	const io = realIo({ config, contract, pr: store.pr, slug });
 	const holder = `${process.env.GITHUB_RUN_ID || process.pid}-${Date.now()}`;
 	for (;;) {
@@ -1537,10 +1541,13 @@ async function selfTest() {
 		const doneStore = { pr: { number: 7 }, read: () => doneState, write: () => writes++, reread() {}, finish: () => finishes++ };
 		const again = await runOne({ store: doneStore, contract: { service: "api", root_spans: ["GET /x"] }, config: base });
 		line("a finished rollout is reported, never ticked again", again === doneState && writes === 0 && finishes === 0 && statusLine(again, { number: 7 }) === "deployment-verify #7: PASS — every probed route held", null);
+		const labelledStore = { ...doneStore, pr: { number: 7, labels: [{ name: LABEL }] } };
+		const labelledAgain = await runOne({ store: labelledStore, contract: { service: "api", root_spans: ["GET /x"] }, config: base });
+		line("a finished rollout still labelled is relabelled once, so --all stops picking it up", labelledAgain === doneState && writes === 0 && finishes === 1, null);
 		const relabel = finishArgs([{ name: LABEL }], 7).join(" ") === "pr edit 7 --remove-label deployment-verify --add-label deployment-verify:done" && finishArgs([], 7).join(" ") === "pr edit 7 --add-label deployment-verify:done";
 		line("the relabel removes the label only when the PR carries it", relabel, null);
 	}
-	const total = 57;
+	const total = 58;
 	console.log(failed ? `${failed}/${total} failed` : `${total}/${total} passed`);
 	process.exit(failed ? 1 : 0);
 }
