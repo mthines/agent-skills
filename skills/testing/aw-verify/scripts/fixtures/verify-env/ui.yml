@@ -1,0 +1,13 @@
+# Fixture for verify-env.mjs: a monorepo whose web app is proven on the PR preview.
+version: 1
+surface:
+  include: ['apps/web/**']
+verify:
+  rules:
+    - paths: ['apps/web/**']
+      env: preview
+      when: after-pr
+    - paths: ['services/**']
+      env: local
+  default:
+    env: checks
