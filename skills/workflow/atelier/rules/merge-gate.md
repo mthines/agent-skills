@@ -1,5 +1,5 @@
 ---
-title: Merge gate — green CI, proven criteria, a flag contract for a user-visible diff, and a contract or opt-out for every diff to a hosted service
+title: Merge gate — green CI, proven criteria, a flag contract (or a classed no-flag marker for a small change) for a user-visible diff, and a contract or opt-out for every diff to a hosted service
 impact: HIGH
 tags: [atelier, merge, gate, deployment-verify, ui]
 ---
@@ -45,10 +45,17 @@ A repo is **hosted** when `.agents/aw/release.yml` loads a `production` environm
 | not user-visible, hosted | neither, an opt-out with no reason, or a contract `deployment-verify` would refuse | 1 | `refuse`, naming both fixes |
 | user-visible | a valid `deployment-verify:v1` contract with `flag.key` whose `flag.provider` `release.yml` declares | 0 | `pass` |
 | user-visible | a contract with `flag.key` and no provider to step it (no `release.yml`, `providers: []`, or no `flag.provider`) | 0 | `pass` + `warning: deployment-verify cannot step this flag here: no provider; a human flips it` |
-| user-visible | no contract, a contract that does not parse, one with no `flag`, a `flag.provider` that a non-empty `providers` list lacks (a typo), or any other `deployment-verify` refusal | 1 | `refuse` |
+| user-visible, a [hard trigger](./flag-policy.md#hard-triggers) hits, or `flag_policy.require_flag: always` | no flag contract (none, one that does not parse, one with no `flag`, a `flag.provider` that a non-empty `providers` list lacks (a typo), or any other `deployment-verify` refusal); a marker never changes this | 1 | `refuse`, naming the trigger |
+| user-visible, no trigger | no flag contract (none, one that does not parse, one with no `flag`, a `flag.provider` that a non-empty `providers` list lacks (a typo), or any other `deployment-verify` refusal) and no `atelier:no-flag` marker | 1 | `refuse`, naming both ways through |
+| user-visible, no trigger, hosted | a valid `atelier:no-flag` marker and a valid `deployment-verify:v1` contract with no `flag` | 0 | `pass`, `no flag (<class>): <why>; verified on the deploy` |
+| user-visible, no trigger, not hosted | a valid `atelier:no-flag` marker | 0 | `pass` + `warning: no deploy verify runs here: nothing watches this change after the merge` |
+| user-visible, no trigger, hosted | a valid marker and no valid before/after contract | 1 | `refuse`, asking for the before/after contract |
+| user-visible, no trigger | a marker with an unknown or dropped class, no reason, or `already-flagged` with no flag; or a diff whose size is unknown (no file list) | 1 | `refuse` |
 | — | — | 2 | error: record `failed`, never merge |
 
 1. **User-visible** is `ui-verify`'s `scripts/is-ui-diff.mjs` answer, run by path, with the `surface` from the repo's `.agents/aw/ui.yml` when it has one (the gate reads it; run the gate from the repo root or pass `--repo-dir`).
+   A diff with no flag contract gets the [flag policy](./flag-policy.md): the gate counts the hard triggers from the PR's file list (`gh pr view --json files`; offline `--files-json`) and reads the marker; its limits come from `flag_policy` in `.agents/aw/merge.yml`.
+   The JSON gains `flag_triggers` (`[]` none, `null` unknown) and `no_flag_class` (set only when the marker let the diff through).
 2. **The contract** is the block `deployment-verify` reads, parsed by its own `parseContract()` and checked by its own `validateContract()`, against `.agents/aw/release.yml` when it exists; its format is `deployment-verify`'s `rules/contract.md`.
    With no matching provider, `cohort` is not required: only a provider splits traffic on it.
 3. On a refusal, print the gate's how-to lines verbatim under `Needs you:`; they name a provider only when `release.yml` declares one.
@@ -64,7 +71,7 @@ A repo is **hosted** when `.agents/aw/release.yml` loads a `production` environm
 ✓ MERGE_GATE: pass — not user-visible — no UI file in the diff
 ```
 
-The opt-out is the author's word that nothing deployed can change: docs, CI config, a skill file. It never passes a user-visible diff, which still needs a flag.
+The opt-out is the author's word that nothing deployed can change: docs, CI config, a skill file. It never passes a user-visible diff, which needs a flag or a classed `atelier:no-flag` marker.
 
 ```text
 ✗ hosted repo, worker change, no contract → merge          # Deliver has nothing to verify the deploy against

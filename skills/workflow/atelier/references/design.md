@@ -38,6 +38,15 @@ A repo can declare `flags.providers: []` on purpose, when its flag evaluations a
 Refusing there would block every user-visible change in that repo and send the author after a provider that does not exist, so a contract with `flag.key` and no matching provider passes with a warning, and the warning travels into the reason and the human's next step.
 Every other contract defect `validateContract()` finds still refuses, and `cohort` is waived only there, because only a provider splits traffic on it.
 
+A flag is a rollout tool, and requiring one for every user-visible diff filled the registry with flags for copy fixes and one-line bug fixes that nobody would ever step.
+So a user-visible diff with no flag contract gets two checks, split by who can be trusted with which.
+The gate counts the **hard triggers** itself (a new route, an always-flag path, a large diff, many new files), because an author's estimate of "small" is the very judgment the policy exists to check, and a counter has no stake in the answer.
+The author gives the **class** (`bugfix`, `copy`, `style`, `a11y`, `refactor`, `internal`, `already-flagged`) because only the author knows whether behaviour changed, and a closed list lets a reviewer check it at a glance; the marker's required reason is a sentence to disagree with.
+A trigger always wins over a marker, and an unknown size is refused rather than read as small, so the cheap path can never be reached by leaving something out.
+Skipping the flag does not skip the safety net: in a hosted repo the change still carries the before/after contract, so Deliver watches its deploy and opens a revert PR when it regresses, the same way it does for a change to a backend service.
+That is why the flag is optional only where a deploy check stands in for it; with neither, the gate warns that nothing watches the change.
+The limits are defaults a repo overrides under `flag_policy` in `.agents/aw/merge.yml`, because only the repo knows which directories are routes and which are navigation; `require_flag: always` restores the old rule for a repo that wants it.
+
 The gate runs right after Build as well as before the merge.
 A contract is the author's, so the cheapest place to fix a missing one is while `aw` still holds the branch; one fix round bounds the cost, and a second refusal is a human's call.
 The early gate also asks for the verify report, because a report that was never written is otherwise found only at Ready, after the CI wait and `prepare`, and a run can spend hours reaching that refusal.

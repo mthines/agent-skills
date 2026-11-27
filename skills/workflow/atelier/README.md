@@ -79,8 +79,10 @@ See every state in the [comment gallery](./scripts/fixtures/comments/README.md).
 
 ## The gates it never skips
 
-- **A user-visible change ships behind a feature flag.**
-  The merge gate refuses a UI diff whose PR body has no `deployment-verify:v1` flag contract.
+- **A user-visible change that needs a rollout ships behind a feature flag.**
+  The merge gate refuses a UI diff whose PR body has no `deployment-verify:v1` flag contract when it adds a route, touches an always-flag path, or is large (over 150 changed UI lines or 2 new UI files by default).
+  A small change (a bugfix, copy, style, a11y, refactor, or internal change) may skip the flag with a `<!-- atelier:no-flag — <class>: <why> -->` marker; the gate counts the triggers itself, and in a hosted repo the change still carries the before/after contract, so Deliver watches its deploy.
+  A repo sets its own limits and paths under `flag_policy` in `.agents/aw/merge.yml` ([`rules/flag-policy.md`](./rules/flag-policy.md)).
 - **A change to a hosted service is verified on its deploy.**
   In a repo whose `release.yml` detects production deploys, every PR carries a contract or a `<!-- deployment-verify:none — <reason> -->` opt-out, and after the pipeline is green Deliver runs `deployment-verify` on a no-flag change: verify, and revert through a PR only when it asks a human to roll back.
 - **CI must have actually run.**
@@ -104,7 +106,7 @@ Every file is optional; each one unlocks a little more.
 | `.agents/aw/environments.yml`, `telemetry.yml` | signed-in UI checks and telemetry proof | `/aw-verify setup` |
 | `.agents/aw/release.yml` | flag rollouts, the pipeline Deliver reads, and the deploy detection that turns on the verify | `/deployment-verify setup` |
 | `.agents/aw/tracker.yml` | a linked or new ticket for every run | `/ticket setup` |
-| `.agents/aw/merge.yml` | waiting for your repo's auto-approval before the merge, and `manual_merge_paths` that atelier never merges | you, by hand |
+| `.agents/aw/merge.yml` | waiting for your repo's auto-approval before the merge, `manual_merge_paths` that atelier never merges, and the `flag_policy` that says which UI changes need a flag | you, by hand |
 
 ---
 
