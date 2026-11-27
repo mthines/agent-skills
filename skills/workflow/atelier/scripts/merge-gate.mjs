@@ -209,8 +209,8 @@ export async function loadFlagPolicy(repoDir) {
 	const path = join(repoDir, ".agents", "aw", "merge.yml");
 	if (!existsSync(path)) return DEFAULT_FLAG_POLICY;
 	const { parseYaml } = await deploymentVerifyModule("yaml-lite.mjs");
-	const p = (parseYaml(readFileSync(path, "utf8")) ?? {}).flag_policy;
-	if (!p) return DEFAULT_FLAG_POLICY;
+	const raw = (parseYaml(readFileSync(path, "utf8")) ?? {}).flag_policy;
+	if (!raw) return DEFAULT_FLAG_POLICY;
 	const list = (v) => (v === undefined || v === null ? undefined : (Array.isArray(v) ? v : [v]).map(String));
 	const number = (v, label) => {
 		if (v === undefined || v === null) return undefined;
@@ -218,17 +218,17 @@ export async function loadFlagPolicy(repoDir) {
 		if (!Number.isFinite(n) || n < 0) throw new Error(`.agents/aw/merge.yml flag_policy.${label} must be a non-negative number, got ${v}`);
 		return n;
 	};
-	const classes = list(p.classes);
+	const classes = list(raw.classes);
 	const unknown = (classes ?? []).filter((c) => !NO_FLAG_CLASSES.includes(c));
 	if (unknown.length) throw new Error(`.agents/aw/merge.yml flag_policy.classes has unknown ${unknown.join(", ")} (one of ${NO_FLAG_CLASSES.join(", ")})`);
-	if (p.require_flag !== undefined && p.require_flag !== "always") throw new Error(`.agents/aw/merge.yml flag_policy.require_flag must be "always", got ${p.require_flag}`);
+	if (raw.require_flag !== undefined && raw.require_flag !== "always") throw new Error(`.agents/aw/merge.yml flag_policy.require_flag must be "always", got ${raw.require_flag}`);
 	return {
-		maxUnflaggedLines: number(p.max_unflagged_lines, "max_unflagged_lines") ?? DEFAULT_FLAG_POLICY.maxUnflaggedLines,
-		maxNewUiFiles: number(p.max_new_ui_files, "max_new_ui_files") ?? DEFAULT_FLAG_POLICY.maxNewUiFiles,
-		routeGlobs: list(p.route_globs) ?? DEFAULT_FLAG_POLICY.routeGlobs,
-		alwaysFlag: list(p.always_flag) ?? DEFAULT_FLAG_POLICY.alwaysFlag,
+		maxUnflaggedLines: number(raw.max_unflagged_lines, "max_unflagged_lines") ?? DEFAULT_FLAG_POLICY.maxUnflaggedLines,
+		maxNewUiFiles: number(raw.max_new_ui_files, "max_new_ui_files") ?? DEFAULT_FLAG_POLICY.maxNewUiFiles,
+		routeGlobs: list(raw.route_globs) ?? DEFAULT_FLAG_POLICY.routeGlobs,
+		alwaysFlag: list(raw.always_flag) ?? DEFAULT_FLAG_POLICY.alwaysFlag,
 		classes: classes ?? DEFAULT_FLAG_POLICY.classes,
-		requireFlag: p.require_flag === "always",
+		requireFlag: raw.require_flag === "always",
 	};
 }
 
@@ -260,17 +260,17 @@ export function flagTriggers({ files, matched, stats, policy = DEFAULT_FLAG_POLI
 // this small change needs no rollout. Returns the parts; whether they are acceptable is noFlagProblem()'s call.
 export const NO_FLAG_RE = /<!--\s*atelier:no-flag\b\s*[—–-]*\s*([\s\S]*?)\s*-->/;
 export function parseNoFlag(body) {
-	const m = (body || "").match(NO_FLAG_RE);
-	if (!m) return null;
-	const p = m[1].trim().match(/^([A-Za-z][A-Za-z-]*)(?:[ \t]+([^\s:]+))?[ \t]*(?::\s*([\s\S]*))?$/);
-	return p ? { class: p[1].toLowerCase(), flag: p[2] || "", reason: (p[3] || "").trim() } : { class: "", flag: "", reason: "" };
+	const match = (body || "").match(NO_FLAG_RE);
+	if (!match) return null;
+	const parts = match[1].trim().match(/^([A-Za-z][A-Za-z-]*)(?:[ \t]+([^\s:]+))?[ \t]*(?::\s*([\s\S]*))?$/);
+	return parts ? { class: parts[1].toLowerCase(), flag: parts[2] || "", reason: (parts[3] || "").trim() } : { class: "", flag: "", reason: "" };
 }
 
-export function noFlagProblem(nf, policy = DEFAULT_FLAG_POLICY) {
-	if (!nf.class) return "the atelier:no-flag marker names no class";
-	if (!policy.classes.includes(nf.class)) return `the atelier:no-flag class "${nf.class}" is not allowed (one of ${policy.classes.join(", ")})`;
-	if (nf.class === "already-flagged" && !nf.flag) return "already-flagged needs the flag key: <!-- atelier:no-flag — already-flagged <flag>: <why> -->";
-	if (!nf.reason) return "the atelier:no-flag marker gives no reason";
+export function noFlagProblem(marker, policy = DEFAULT_FLAG_POLICY) {
+	if (!marker.class) return "the atelier:no-flag marker names no class";
+	if (!policy.classes.includes(marker.class)) return `the atelier:no-flag class "${marker.class}" is not allowed (one of ${policy.classes.join(", ")})`;
+	if (marker.class === "already-flagged" && !marker.flag) return "already-flagged needs the flag key: <!-- atelier:no-flag — already-flagged <flag>: <why> -->";
+	if (!marker.reason) return "the atelier:no-flag marker gives no reason";
 	return null;
 }
 
@@ -297,13 +297,13 @@ function decideHosted(contract, opt) {
 
 // A user-visible diff with no flag: allowed only for a small change the author classed, with no hard trigger hit,
 // and in a hosted repo only with the before/after contract that lets Deliver watch the deploy.
-function decideNoFlag({ nf, triggers, contract, hosted, policy, flagRefusal }) {
+function decideNoFlag({ marker, triggers, contract, hosted, policy, flagRefusal }) {
 	const refuse = (why, how) => ({ decision: "refuse", reason: `user-visible diff, ${why}`, how: how ?? flagRefusal.how });
-	const problem = noFlagProblem(nf, policy);
+	const problem = noFlagProblem(marker, policy);
 	if (problem) return refuse(problem);
 	if (triggers === null) return refuse("the diff's size is unknown, so the no-flag marker cannot be checked", "Run the gate with --pr, or offline with --files-json <gh pr view --json files>, so it can count lines and new files.");
 	if (triggers.length) return { ...flagRefusal, reason: `user-visible diff, a flag is required: ${triggers.join("; ")}` };
-	const label = `no flag (${nf.class}${nf.flag ? ` ${nf.flag}` : ""}): ${nf.reason}`;
+	const label = `no flag (${marker.class}${marker.flag ? ` ${marker.flag}` : ""}): ${marker.reason}`;
 	if (!hosted) return { decision: "pass", reason: `user-visible, ${label}; ${NO_DEPLOY_VERIFY_WARNING}`, warning: NO_DEPLOY_VERIFY_WARNING };
 	if (contract.noFlag) return { decision: "pass", reason: `user-visible, ${label}; verified on the deploy` };
 	const why = contract.missing === "contract" ? "no deployment-verify:v1 contract in the PR body"
@@ -341,7 +341,7 @@ export function decide({ isUI, contract, hosted = false, optOut: opt = null, noF
 	];
 	const flagRefusal = { decision: "refuse", reason: `user-visible diff, ${what}`, how: flagHow.join("\n") };
 	if (policy.requireFlag) return flagRefusal;
-	if (noFlag) return decideNoFlag({ nf: noFlag, triggers, contract, hosted, policy, flagRefusal });
+	if (noFlag) return decideNoFlag({ marker: noFlag, triggers, contract, hosted, policy, flagRefusal });
 	if (triggers?.length) return { ...flagRefusal, reason: `${flagRefusal.reason}; a flag is required: ${triggers.join("; ")}` };
 	// A change that needs no rollout has a second way through; a hard trigger (above) never does.
 	flagHow.push(
