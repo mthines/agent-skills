@@ -18,13 +18,14 @@ When one hits, the change needs a flag and a flag contract, and a marker is igno
 
 | Trigger | Hits when | Default | `merge.yml` key |
 | --- | --- | --- | --- |
-| New route | a file the PR adds matches a route glob | `**/app/**/page.{tsx,ts,jsx,js}`, `**/pages/**` | `route_globs` (replaces the list) |
+| New route | a file the PR adds, renames, or copies into a route glob (a moved page is a new URL) | `**/app/**/page.{tsx,ts,jsx,js}`, `**/pages/**` | `route_globs` (replaces the list) |
 | Always-flag path | any changed file matches a glob | none | `always_flag` |
 | Large diff | added plus deleted lines in the diff's UI files exceed the limit | 150 | `max_unflagged_lines` |
 | Many new files | the PR adds more UI files than the limit | 2 | `max_new_ui_files` |
 
 The UI files are the ones `is-ui-diff.mjs` matches, so tests and the `exclude` globs in `.agents/aw/ui.yml` never count.
-When the gate cannot count (no file list, or a UI file missing from it) it refuses a marker instead of guessing: an unknown size is never a small one.
+When the gate cannot count (no file list, a UI file missing from it, or a file with no change type) it refuses a marker instead of guessing: an unknown size is never a small one.
+A rename adds no code, so it does not count toward the new-file limit; a copy does.
 
 ## The no-flag marker
 
