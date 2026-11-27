@@ -233,7 +233,8 @@ export async function loadFlagPolicy(repoDir) {
 }
 
 // `gh pr view --json files` ([{ path, additions, deletions, changeType }]) as { [path]: { status, additions, deletions } }.
-export function diffStats(files) {
+export function diffStats(input) {
+	const files = Array.isArray(input) ? input : input?.files;
 	return Object.fromEntries((files || []).map((f) => [f.path, { status: String(f.changeType || f.status || "").toLowerCase(), additions: Number(f.additions) || 0, deletions: Number(f.deletions) || 0 }]));
 }
 
@@ -262,7 +263,7 @@ export const NO_FLAG_RE = /<!--\s*atelier:no-flag\b\s*[—–-]*\s*([\s\S]*?)\s*
 export function parseNoFlag(body) {
 	const match = (body || "").match(NO_FLAG_RE);
 	if (!match) return null;
-	const parts = match[1].trim().match(/^([A-Za-z][A-Za-z-]*)(?:[ \t]+([^\s:]+))?[ \t]*(?::\s*([\s\S]*))?$/);
+	const parts = match[1].trim().match(/^([A-Za-z][A-Za-z0-9-]*)(?:[ \t]+([^\s:]+))?[ \t]*(?::\s*([\s\S]*))?$/);
 	return parts ? { class: parts[1].toLowerCase(), flag: parts[2] || "", reason: (parts[3] || "").trim() } : { class: "", flag: "", reason: "" };
 }
 
@@ -620,6 +621,8 @@ async function selfTest() {
 	const mark = (text) => `x\n<!-- atelier:no-flag — ${text} -->`;
 	const small = stats({ [HDR]: ["MODIFIED", 3, 2] });
 	t("parseNoFlag: class, flag and reason", JSON.stringify(parseNoFlag(mark("already-flagged newHeader: behind the live flag"))) === JSON.stringify({ class: "already-flagged", flag: "newHeader", reason: "behind the live flag" }) && parseNoFlag(mark("copy: fix a typo")).reason === "fix a typo" && parseNoFlag("no marker") === null);
+	t("parseNoFlag: a class with a digit (a11y) parses and passes its class check", parseNoFlag(mark("a11y: add an aria-label")).class === "a11y" && noFlagProblem(parseNoFlag(mark("a11y: add an aria-label"))) === null);
+	t("diffStats: takes the gh object form and the bare array alike", JSON.stringify(diffStats({ files: [{ path: "a.tsx", additions: 1, deletions: 0, changeType: "MODIFIED" }] })) === JSON.stringify(diffStats([{ path: "a.tsx", additions: 1, deletions: 0, changeType: "MODIFIED" }])));
 	t("noFlagProblem: unknown class, missing reason, and already-flagged with no flag", /not allowed/.test(noFlagProblem(parseNoFlag(mark("tweak: x")))) && /no reason/.test(noFlagProblem(parseNoFlag(mark("copy")))) && /needs the flag key/.test(noFlagProblem(parseNoFlag(mark("already-flagged: x")))) && noFlagProblem(parseNoFlag(mark("bugfix: x"))) === null);
 	r = await gate({ files: [HDR], body: mark("copy: fix a typo in the header"), repoDir: empty, stats: small });
 	t("no flag: a classed small change in a repo that is not hosted passes, saying nothing watches it", r.decision === "pass" && r.no_flag_class === "copy" && r.warning === NO_DEPLOY_VERIFY_WARNING && !r.has_flag_contract && r.flag_triggers.length === 0, JSON.stringify(r));

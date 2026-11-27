@@ -41,7 +41,7 @@ All three stay model-invocable via `Skill()` when `disable-model-invocation: fal
 
 - `autonomous-workflow` (`/`) — phase machinery behind `aw`; `plan.md` is a six-heading brief gated on `run-checks.mjs` printing `CHECKS M/M PASS`, ending in a paste-ready `/goal`. `aw` (`auto`) is the sole entry and owns tiers. Design: [`CLAUDE.md`](./skills/workflow/autonomous-workflow/CLAUDE.md)
 - `aw-create-plan` (`Skill()`) — writes the `plan.md` brief (Task, Requirements, Guardrails, Definition of Done, Turn Cap, File Changes) + sealed `checks.yaml`. `aw-create-walkthrough` (`Skill()`) — writes `walkthrough.md`, led by a one-page review summary
-- `atelier` (`/`) — sequences `aw` → `prepare` → `prepare --merge` (waits for auto-approval), then checks `main`'s CI and verifies a no-flag deploy; a skipped companion holds Build; `merge-gate.mjs` wants a flag contract on a UI diff that adds a route, hits an always-flag path, or is large (a small one may carry an `atelier:no-flag` marker), a contract or opt-out when hosted, a live Ready record; resumable
+- `atelier` (`/`) — sequences `aw` → `prepare` → `prepare --merge`, then checks `main`'s CI and verifies the deploy; a skipped companion holds Build; `merge-gate.mjs` wants a flag contract on a risky UI diff (a small one takes `atelier:no-flag`), a contract or opt-out when hosted; resumable
 - `fix-bug` (`/`) — single-bug pipeline, phases 0–8
 - `implement-suggestion` (`/`) — apply reviewer suggestions across PRs; `--watch` loops one PR, `--resolve-all` closes non-fix threads. Never fixes CI
 
