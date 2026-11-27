@@ -238,19 +238,20 @@ export function diffStats(files) {
 }
 
 // The hard triggers: why this user-visible diff needs a flag whatever the author says. [] = none hit.
-// `null` = unknown (no stats, or a UI file missing from them): the caller fails closed.
+// `null` = unknown (no stats, a UI file missing from them, or a file with no change type): the caller fails closed.
 // `matched` are the diff's UI files (is-ui-diff already leaves tests out); routes and the always-flag list look at every changed file.
+// A route that is renamed or copied into a route glob is a new URL, so it counts as new; a rename adds no code, so it is not a new file.
 export function flagTriggers({ files, matched, stats, policy = DEFAULT_FLAG_POLICY }) {
-	if (!stats || matched.some((p) => !stats[p])) return null;
+	if (!stats || matched.some((p) => !stats[p]) || Object.values(stats).some((f) => !f.status)) return null;
 	const any = (p, globs) => globs.map(globToRegExp).some((re) => re.test(p));
 	const hits = [];
-	const routes = files.filter((p) => stats[p]?.status === "added" && any(p, policy.routeGlobs));
+	const routes = files.filter((p) => ["added", "renamed", "copied"].includes(stats[p]?.status) && any(p, policy.routeGlobs));
 	if (routes.length) hits.push(`new route ${routes[0]}${routes.length > 1 ? ` (+${routes.length - 1} more)` : ""}`);
 	const always = files.filter((p) => any(p, policy.alwaysFlag));
 	if (always.length) hits.push(`${always[0]} is on the repo's always-flag list${always.length > 1 ? ` (+${always.length - 1} more)` : ""}`);
 	const lines = matched.reduce((n, p) => n + stats[p].additions + stats[p].deletions, 0);
 	if (lines > policy.maxUnflaggedLines) hits.push(`${lines} changed UI lines, over the limit of ${policy.maxUnflaggedLines}`);
-	const added = matched.filter((p) => stats[p].status === "added").length;
+	const added = matched.filter((p) => ["added", "copied"].includes(stats[p].status)).length;
 	if (added > policy.maxNewUiFiles) hits.push(`${added} new UI files, over the limit of ${policy.maxNewUiFiles}`);
 	return hits;
 }
@@ -638,6 +639,18 @@ async function selfTest() {
 	const three = stats({ "src/components/A.tsx": ["ADDED", 5, 0], "src/components/B.tsx": ["ADDED", 5, 0], "src/components/C.tsx": ["ADDED", 5, 0] });
 	r = await gate({ files: Object.keys(three), body: mark("internal: extract"), repoDir: empty, stats: three });
 	t("trigger: more than two new UI files needs a flag", r.decision === "refuse" && /3 new UI files, over the limit of 2/.test(r.reason), r.reason);
+	const noType = diffStats(Object.keys(three).map((path) => ({ path, additions: 5, deletions: 0 })));
+	r = await gate({ files: Object.keys(three), body: mark("internal: extract"), repoDir: empty, stats: noType });
+	t("a file with no change type is unknown, so the marker is refused (fails closed)", r.decision === "refuse" && /size is unknown/.test(r.reason) && r.flag_triggers === null, JSON.stringify(r));
+	const renamed = stats({ "src/app/billing/page.tsx": ["RENAMED", 0, 0] });
+	r = await gate({ files: ["src/app/billing/page.tsx"], body: mark("refactor: move the page"), repoDir: empty, stats: renamed });
+	t("trigger: a page renamed into a route glob is a new route", r.decision === "refuse" && /new route src\/app\/billing\/page\.tsx/.test(r.reason), r.reason);
+	const copied = stats({ "src/app/billing/page.tsx": ["COPIED", 20, 0] });
+	r = await gate({ files: ["src/app/billing/page.tsx"], body: mark("internal: copy"), repoDir: empty, stats: copied });
+	t("trigger: a page copied into a route glob is a new route", r.decision === "refuse" && /new route/.test(r.reason), r.reason);
+	const moved = stats({ "src/components/A.tsx": ["RENAMED", 0, 0], "src/components/B.tsx": ["RENAMED", 0, 0], "src/components/C.tsx": ["RENAMED", 0, 0] });
+	r = await gate({ files: Object.keys(moved), body: mark("refactor: move three components"), repoDir: empty, stats: moved });
+	t("renamed components add no code, so they are not counted as new UI files", r.decision === "pass" && r.no_flag_class === "refactor", JSON.stringify(r));
 	r = await gate({ files: ["src/app/billing/page.tsx"], body: "no contract", repoDir: empty, stats: route });
 	t("a trigger with no marker refuses on the flag, naming the trigger and offering no no-flag way", r.decision === "refuse" && /no <!-- deployment-verify:v1 -->.*a flag is required: new route/.test(r.reason) && !/atelier:no-flag/.test(r.how), r.reason);
 	r = await gate({ files: [HDR], body: mark("tweak: x"), repoDir: empty, stats: small });
