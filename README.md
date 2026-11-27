@@ -161,7 +161,7 @@ How it works inside: [`full-tier.md`](./skills/workflow/autonomous-workflow/aw/r
 
 1. **Build & review.** Runs [`aw`](#featured-autonomous-workflow), whose agent review loops until the diff is clean, and holds when a required companion (review, PR, quality pass, verification) did not run.
 2. **Verify.** Undrafts the PR, waits for real CI, gets it green with [`prepare`](./skills/delivery/prepare/SKILL.md), and requires a verify report that proves every acceptance criterion.
-3. **Merge.** A script gate refuses a user-visible change without a feature-flag contract, then squash-merges.
+3. **Merge.** A script gate refuses a user-visible change that needs a rollout (a new route, a large diff) without a feature-flag contract, then squash-merges. A small change may skip the flag with a classed marker.
 4. **Deliver.** Reads `main`'s pipeline for the merge commit, fixes a red one once, and reverts the merge when the fix stays red.
 
 One sticky comment on the PR shows where the run is, with a status card for every state ([gallery](./skills/workflow/atelier/scripts/fixtures/comments/README.md)); re-running `/atelier <pr>` resumes at the first incomplete stage.
@@ -173,7 +173,7 @@ It never flips a flag or deploys: after the merge it tells you how to roll the c
 | ----- | ------------ |
 | **`workflow/`** | *End-to-end orchestrators* |
 | [`aw`](./skills/workflow/autonomous-workflow/aw/SKILL.md) | Ships a task end to end: brief, build until green, fresh-eyes review, draft PR. |
-| [`/atelier`](./skills/workflow/atelier/README.md) | Takes a request or a PR to a merged PR — build, get green, merge — and refuses to merge a user-visible change that has no feature-flag contract. After the merge, checks `main`'s pipeline and tells you how to roll it out. Experimental. `/atelier setup` runs preflight and hands each gap to the setup skill that fixes it; with a `tracker.yml`, each run links or creates its ticket. |
+| [`/atelier`](./skills/workflow/atelier/README.md) | Takes a request or a PR to a merged PR — build, get green, merge — and refuses to merge a user-visible change that needs a rollout and has no feature-flag contract; a small change may skip the flag with a classed marker. After the merge, checks `main`'s pipeline and tells you how to roll it out. Experimental. `/atelier setup` runs preflight and hands each gap to the setup skill that fixes it; with a `tracker.yml`, each run links or creates its ticket. |
 | [`/fix-bug`](./skills/workflow/fix-bug/SKILL.md) | Fixes one bug from a stack trace, span, recording, or ticket, behind a failing test. |
 | [`/implement-suggestion`](./skills/workflow/implement-suggestion/SKILL.md) | Applies PR review comments, one commit each, and resolves the threads. |
 | **`quality/`** | *Code, tests, plans, AI apps* |
