@@ -74,6 +74,7 @@ export function makeTester(label) {
 const COMPANION_ALIASES = {
 	"review-loop": /\b(review-loop|branch-reviewer|pr-reviewer|local review)\b/i,
 	"create-pr": /\bcreate-pr\b/i,
+	"pr-description": /\b(pr description|description refresh)\b/i,
 	// Not bare `ux`: the quality pass skips its UX lane by design on a diff with no UI.
 	"quality-pass": /\b(quality[ -]pass|fit|reuse)\b/i,
 	"aw-verify": /\b(aw-verify|ui-verify|aw-tester)\b/i,
@@ -81,8 +82,10 @@ const COMPANION_ALIASES = {
 
 // The companions a Build must have run: every tier opens its PR through create-pr, whose local
 // review-loop reviews it; Lite and Full add the quality pass, and aw-verify on a user-visible diff.
-export function requiredCompanions({ tier = "Full" } = {}) {
-	const out = ["review-loop", "create-pr"];
+// A follow-up pushes to a PR that is already open, so it opens nothing: it owes the PR a description
+// that covers the new commits instead of create-pr.
+export function requiredCompanions({ tier = "Full", followUp = false } = {}) {
+	const out = ["review-loop", followUp ? "pr-description" : "create-pr"];
 	if (tier !== "Micro") out.push("quality-pass");
 	// Every Lite/Full PR proves its criteria with aw-verify; verify-env.mjs --tier picks checks, local, or preview.
 	if (tier !== "Micro") out.push("aw-verify");
@@ -126,9 +129,9 @@ export function parseDegraded(text) {
 // The Build decision for companions: `hold` with `skipped: <names>` when a required one did not run
 // and the user did not accept that skip (`--accept-skip <name>[,<name>]`); `proceed` otherwise.
 // No `Degraded:` line at all is a hold too: a hand-back that hides what ran proves nothing ran.
-export function companionDecision(text, { accept = [] } = {}) {
+export function companionDecision(text, { accept = [], followUp = false } = {}) {
 	const d = parseDegraded(text);
-	const required = requiredCompanions({ tier: d.tier ?? "Full" });
+	const required = requiredCompanions({ tier: d.tier ?? "Full", followUp });
 	if (!d.found) return { decision: "hold", reason: "skipped: unknown — no Degraded: line in aw's hand-back", missing: required, accepted: [] };
 	const missing = d.skipped.filter((n) => required.includes(n));
 	const accepted = missing.filter((n) => accept.includes(n));

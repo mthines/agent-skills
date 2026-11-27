@@ -143,6 +143,8 @@ When the user returns after the PR opened with an improvement or a small suggest
 1. Re-detect the tier for the delta only.
 2. Micro / Lite delta → single-pass on the same branch and worktree, push to the existing PR.
 3. Full delta → fold it into `plan.md` + `checks.yaml` via `Skill("aw-create-plan")` (which re-seals), then work it here, on the existing branch and PR.
+4. Every tier: run the local review pass before pushing, never `create-pr` (the PR is open). After the push, update the PR description so its narrative covers the new commits (`gh pr edit --body-file`, keeping every marked region), and publish the delta's criteria and proof as on a new PR.
+5. Hand-back: `Delivered: <pr-url> (follow-up)`. Never name `create-pr` under `Degraded:`, since it does not apply; an unrefreshed description goes there as `PR description refresh skipped (<why>)`.
 
 Pause only for a genuine blocker or conflict — [`safety-guardrails.md`](../rules/safety-guardrails.md#user-requested-changes-are-never-scope-creep).
 

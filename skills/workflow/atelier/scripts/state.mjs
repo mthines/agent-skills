@@ -15,8 +15,9 @@
 // the companions check, and the decision; a decision that ends the run exports it. Telemetry writes go
 // to the ledger and stderr only, never to stdout, and never change the exit code.
 // A --pr on --next or --companions (a URL, or a number resolved against the run's repo) sets the run's PR facts.
-//   node state.mjs --companions --aw-file <f> [--accept-skip a,b]
-//                                                          prints `COMPANIONS: proceed|hold — <reason>` for aw's hand-back
+//   node state.mjs --companions --aw-file <f> [--accept-skip a,b] [--follow-up]
+//                                                          prints `COMPANIONS: proceed|hold — <reason>` for aw's hand-back;
+//                                                          --follow-up (Build pushed to an open PR) requires pr-description, not create-pr
 //   node state.mjs --checkpoint --pr <url> --step <companions|sentinel|early-gate> --head <sha> [--aw-file <f>] [--result "<line>"]
 //                                                          marks one after-Build checklist step done (companions stores aw's hand-back)
 //   node state.mjs --resume-step --pr <url> --head <sha> [--aw-out <f>]
@@ -448,6 +449,11 @@ function selfTest() {
 	t("Micro requires no quality pass", companionDecision("AW RUN COMPLETE — Micro, PR https://x/pull/2, Degraded: fit skipped, Needs you: nothing").decision === "proceed");
 	t("aw-verify is required on a UI and a non-UI diff alike", companionDecision(block("aw-verify skipped (no browser)")).decision === "hold" && companionDecision(block("aw-verify skipped (no browser)"), { uiDiff: true }).decision === "hold");
 	t("required companions by tier", requiredCompanions({ tier: "Micro", uiDiff: true }).join() === "review-loop,create-pr" && requiredCompanions({ tier: "Lite", uiDiff: true }).join() === "review-loop,create-pr,quality-pass,aw-verify" && requiredCompanions({ tier: "Lite", uiDiff: false }).join() === "review-loop,create-pr,quality-pass,aw-verify");
+	t("a follow-up requires a description refresh, not create-pr", requiredCompanions({ tier: "Full", followUp: true }).join() === "review-loop,pr-description,quality-pass,aw-verify");
+	t("✓ a follow-up that names create-pr as not run proceeds", companionDecision(block("create-pr not run (pushed to the existing PR)"), { followUp: true }).decision === "proceed");
+	t("✗ the same hand-back on a fresh Build holds", companionDecision(block("create-pr not run (pushed to the existing PR)")).reason === "skipped: create-pr");
+	const stale = companionDecision(block("PR description refresh skipped (context budget)"), { followUp: true });
+	t("a follow-up whose description was not refreshed holds", stale.decision === "hold" && stale.reason === "skipped: pr-description", JSON.stringify(stale));
 	const acc = companionDecision(block("review-loop skipped (context budget)"), { accept: ["review-loop"] });
 	t("--accept-skip from the user proceeds and says so", acc.decision === "proceed" && acc.reason === "accepted skip: review-loop (user)");
 	t("no Degraded: line holds", companionDecision("AW RUN COMPLETE\n- Tier: Full").decision === "hold");
@@ -505,7 +511,7 @@ async function main() {
 		}
 		else if (a.companions) {
 			const accept = typeof a["accept-skip"] === "string" ? a["accept-skip"].split(",").map((x) => x.trim()) : [];
-			const d = companionDecision(readFileSync(a["aw-file"], "utf8"), { accept });
+			const d = companionDecision(readFileSync(a["aw-file"], "utf8"), { accept, followUp: a["follow-up"] === true });
 			console.log(`COMPANIONS: ${d.decision}${d.reason ? ` — ${d.reason}` : ""}`);
 			const aw = parseDegraded(readFileSync(a["aw-file"], "utf8"));
 			await markCompanions({ decision: d.decision, tier: aw.tier, skipped: d.missing, accepted: d.accepted, pr: typeof a.pr === "string" ? a.pr : null });

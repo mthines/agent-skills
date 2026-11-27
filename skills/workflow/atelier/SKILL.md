@@ -41,13 +41,14 @@ It owns no build, review, verify, or deploy logic: each stage is one delegation,
 | `setup` | Only as the sole argument (`/atelier setup SSO for admins` is a request). Ready the repo for runs: preflight, then each gap handed to the skill that fixes it, then a before/after table ([`setup`](#setup)). Runs no stage. |
 | `<request>` | Free text: start at Build. |
 | `<pr-url\|#n>` | An existing PR: skip Build (`skipped`, reason `existing PR`) and resume from its state comment. |
+| `<request>` naming an open PR | A follow-up: new work pushed to that PR. Build runs `aw` on the PR's branch, opens no PR, and the companions check requires a description refresh in place of `create-pr` ([Step 0](#step-0--setup) item 7). |
 | `--ticket <id\|url>` | The ticket this work belongs to; [Step 0](#step-0--setup) links it instead of asking. |
 | `--unattended` | No human is present: Build forwards `--no-confirm` to `aw` and tells it to run `interview` with `--non-interactive`, so a `blocking` question ends the run as `failed` instead of waiting. |
 | `--keep-draft` | Ready leaves the PR a draft; when CI did not run on the draft (`ci-ran.mjs` prints `CI: not-run`), Ready records `hold` (reason `CI not run: draft — <its reason>`). |
 | `--max-wait <minutes>` | The longest one [wait for CI](#waiting-for-ci) or [wait for approval](#waiting-for-approval) lasts (default 30). `0` never waits: pending CI or a pending approval records a `hold`, as before. |
 | `--no-deliver` | Stop at the merge: skip the [Deliver](#after-the-merge) step (the default-branch pipeline read, its one fix, the revert, and the deploy verify). |
 | `--accept-gaps` | The user accepts every [preflight](#preflight) gap: Build runs even when a gap leaves a stated criterion unprovable; the gaps ride into `Degraded:`. |
-| `--accept-skip <name,…>` | The user accepts that these [companions](#after-build-returns) did not run (`review-loop`, `create-pr`, `quality-pass`, `aw-verify`); only the user passes it, never an agent, and the decision event records it. |
+| `--accept-skip <name,…>` | The user accepts that these [companions](#after-build-returns) did not run (`review-loop`, `create-pr`, `pr-description`, `quality-pass`, `aw-verify`); only the user passes it, never an agent, and the decision event records it. |
 
 ## `setup`
 
@@ -154,6 +155,13 @@ Run `/atelier` at the top level of a session, never inside a dispatched sub-agen
    `RESUME: companions`, `sentinel`, `early-gate`, or `record` → an earlier run built this PR and died in the [after-Build checklist](#after-build-returns): resume Build at that step with the stored `aw.txt` (`record` is step 5), and never run `aw` again.
    `RESUME: none` → record Build as `skipped` (reason `existing PR`) before `--next`, so it returns `ready` and `aw` never runs on a PR that exists.
    With a request: the stage is `build`.
+   A request that names an open PR, or that runs on a branch whose PR is open, is a **follow-up**: the stage is `build` whatever the state comment says, `aw` gets `follow-up on <pr-url>` ahead of the request, and the after-Build checklist passes `--follow-up` to `--companions`.
+   A follow-up never makes `--accept-skip create-pr` necessary: no PR is opened, so `create-pr` is not required.
+
+   ```text
+   ✗ "fix these findings on PR 29019" → fresh Build → COMPANIONS: hold — skipped: create-pr   # asks the user to waive a step that cannot apply
+   ✓ "fix these findings on PR 29019" → follow-up Build → --companions --follow-up → proceed, once the description covers the new commits
+   ```
 
 ### Preflight
 
@@ -448,11 +456,11 @@ node "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/state.mjs" --che
    ```bash
    A="${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts"
    node "$A/merge-gate.mjs" --pr <pr-url> --early > gate.json; echo $? > gate.exit
-   node "$A/state.mjs" --companions --aw-file aw.txt [--accept-skip <the user's names>]
+   node "$A/state.mjs" --companions --aw-file aw.txt [--follow-up] [--accept-skip <the user's names>]
    ```
 
    `COMPANIONS: proceed` → checkpoint `companions` (with `--aw-file aw.txt`) and continue; `COMPANIONS: hold — skipped: <names>` → Build `hold` with that reason, and `Needs you: run <names> on <pr-url>, or re-run /atelier <pr-url> --accept-skip <names>`.
-   Required: `review-loop` and `create-pr` on every tier, plus `quality-pass` on Lite and Full, plus `aw-verify` on every Lite or Full diff (the run `verify-env.mjs --tier` names: the local stack, the preview, or checks only).
+   Required: `review-loop` and `create-pr` on every tier (`pr-description` in place of `create-pr` on a follow-up), plus `quality-pass` on Lite and Full, plus `aw-verify` on every Lite or Full diff (the run `verify-env.mjs --tier` names: the local stack, the preview, or checks only).
 
    ```text
    ✗ Degraded: review-loop skipped (context budget) → Build proceed     # an unreviewed PR walks to the merge
