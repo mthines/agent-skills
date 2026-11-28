@@ -42,7 +42,7 @@ const CONTRACT_END = "<!-- /deployment-verify:v1 -->";
 const MALFORMED = "contract block malformed: only one ```json fence may sit between the markers";
 // Group 1: the JSON fence inside a visible, closed <details> (rules/contract.md § Visible), where a reader's
 // explainer with no ``` fence may follow it (§ How to read). Group 2: a bare fence (older PRs), no explainer.
-const CONTRACT_RE = /<!-- deployment-verify:v1 -->\s*(?:<details>[\s\S]*?<\/summary>\s*```json\s*([\s\S]*?)```(?:(?:(?!```|<!-- \/deployment-verify:v1 -->)[\s\S])*?<\/details>)?|```json\s*([\s\S]*?)```\s*(?:<\/details>)?)\s*<!-- \/deployment-verify:v1 -->/;
+const CONTRACT_RE = /<!-- deployment-verify:v1 -->\s*(?:<details>[\s\S]*?<\/summary>\s*```json\s*([\s\S]*?)```(?:(?:(?!```|<\/details>|<!-- \/deployment-verify:v1 -->)[\s\S])*?<\/details>)?|```json\s*([\s\S]*?)```\s*(?:<\/details>)?)\s*<!-- \/deployment-verify:v1 -->/;
 // aw-verify's `intent` region of the PR's verify report (its writer is aw-verify/scripts/verify-comment.mjs;
 // L1 G132 keeps this reader and that writer's parseIntent in step).
 const INTENT_RE = /<!-- verify:section=intent -->([\s\S]*?)<!-- \/verify:section=intent -->/;
@@ -1305,12 +1305,13 @@ async function selfTest() {
 		const proseBefore = `${open}Why this threshold: the path is hot.\n\n${json}\n\n</details>\n<!-- /deployment-verify:v1 -->`;
 		const fenceInExplainer = `${open}${json}\n\nSee:\n${json}\n\n</details>\n<!-- /deployment-verify:v1 -->`;
 		const twoFences = `<!-- deployment-verify:v1 -->\n${json}\n${json}\n<!-- /deployment-verify:v1 -->`;
+		const proseAfterClose = `${open}${json}\n\n> e\n\n</details>\nmore\n</details>\n<!-- /deployment-verify:v1 -->`;
 		const bareProse = `<!-- deployment-verify:v1 -->\n${json}\n\nWhy this threshold: the path is hot.\n</details>\n<!-- /deployment-verify:v1 -->`;
 		const malformed = "contract block malformed: only one ```json fence may sit between the markers";
 		const ok = parseContract(explainer).contract?.service === "api"
 			&& parseContract(proseOutside).error === malformed && parseContract(proseBefore).error === malformed
 			&& parseContract(fenceInExplainer).error === malformed && parseContract(twoFences).error === malformed
-			&& parseContract(bareProse).error === malformed
+			&& parseContract(bareProse).error === malformed && parseContract(proseAfterClose).error === malformed
 			&& parseContract("No block here.").error?.startsWith("no contract") && parseContract("").error?.startsWith("no contract")
 			&& parseContract("Add a `<!-- deployment-verify:v1 -->` block before the merge.").error?.startsWith("no contract")
 			&& parseContract(`<!-- deployment-verify:v1 -->\n${json}\n<!-- /deployment-verify:v1 -->`).contract?.service === "api";
