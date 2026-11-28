@@ -18,7 +18,7 @@ The controller also reads an older bare fence.
 
 ```text
 ✗ a contract only a script can find: the JSON inside an HTML comment
-✓ <!-- deployment-verify:v1 --> <details><summary>🚦 Deployment contract — …</summary> ```json … ``` </details> <!-- /deployment-verify:v1 -->
+✓ <!-- deployment-verify:v1 --> <details><summary>🚦 Deployment contract — …</summary> ```json … ``` > ℹ️ **How to read this.** … </details> <!-- /deployment-verify:v1 -->
 ```
 
 ## Draft from the criteria
@@ -65,9 +65,32 @@ One fenced JSON block between the markers, anywhere in the PR body, inside the `
 }
 ```
 
+> ℹ️ **How to read this.** After the merge, `/deployment-verify` checks this change in production against these fields:
+>
+> - `service` and `root_spans`: where it looks, the server spans whose error rate and latency it compares.
+> - `flag` and `cohort`: it steps the flag 1 → 100 % and compares flag-on traffic with flag-off traffic.
+> - `reversibility`: how a bad step is undone; `flag` turns the flag off, `redeploy` rolls the deploy back, `irreversible` only reports.
+> - `thresholds`: limits for this change, only ever stricter than the repo's `release.yml`.
+>
+> Each step ends in PASS, HOLD, or ROLLBACK. The contract is written before the merge and never edited after the rollout starts.
+
 </details>
 <!-- /deployment-verify:v1 -->
 ````
+
+## How to read
+
+Put the **How to read this.** explainer above after the JSON fence, inside `<details>`, as a quote that opens with `> ℹ️ **How to read this.**`, so it stands apart from the JSON when a reviewer expands the block.
+Never use a `> [!NOTE]` alert: GitHub renders alerts only at the top level of the body, so inside `<details>` it shows the literal `[!NOTE]`.
+Keep only the bullets for fields the contract has; a no-flag contract replaces the `flag` and `cohort` bullet with `> - no flag: it compares before and after the deploy.`, and a flag whose provider `release.yml` does not declare says `a human flips it` instead of the stepping clause.
+The explainer is the only text allowed between the markers: it sits after the fence and before `</details>`, and holds no ```` ``` ```` fence.
+
+```text
+✗ prose before the JSON fence, or between </details> and the end marker   → contract block malformed
+✗ a ```json example inside the explainer                                 → contract block malformed
+✗ > [!NOTE] inside <details>                                             → renders as a plain quote with a literal [!NOTE]
+✓ ```json … ``` then > ℹ️ **How to read this.** … then </details>
+```
 
 | Field | Meaning |
 | --- | --- |
@@ -88,7 +111,7 @@ Take the first row that fails; print its line and stop without touching the flag
 | Check | Stop line |
 | --- | --- |
 | No region in the PR body | `no contract — add a <!-- deployment-verify:v1 --> block to the PR body` |
-| Both markers are there, but prose or a second fence sits between them | `contract block malformed: only one ```json fence may sit between the markers` — move the extra line below the end marker; never add a second block |
+| Both markers are there, but prose outside the [explainer](#how-to-read) or a second fence sits between them | `contract block malformed: only one ```json fence may sit between the markers` — move the extra line into the explainer or below the end marker; never add a second block |
 | `flag.provider` names no `release.yml` provider | `unknown provider <name>` |
 | `cohort.attribute` is `feature_flag.*` read from span **events** only | `cohort attribute must be a span attribute — span events are not queryable` |
 | A `thresholds` key loosens `release.yml` (higher `max_*`, lower `min_*`) | `contract loosens <key> — thresholds may only tighten` |

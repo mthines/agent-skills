@@ -37,11 +37,12 @@ import { parseYaml } from "./yaml-lite.mjs";
 
 const REPORT_MARKER = "<!-- deployment-verify:v1:report -->";
 const STATE_RE = /<!-- deployment-verify:v1:state (\{.*?\}) -->/s;
-// The JSON fence may sit bare (older PRs) or inside a visible, closed <details> (rules/contract.md § Visible).
+// The JSON fence may sit bare (older PRs) or inside a visible, closed <details> (rules/contract.md § Visible);
+// inside <details>, a reader's explainer with no ``` fence may follow the JSON (rules/contract.md § How to read).
 const CONTRACT_START = "<!-- deployment-verify:v1 -->";
 const CONTRACT_END = "<!-- /deployment-verify:v1 -->";
 const MALFORMED = "contract block malformed: only one ```json fence may sit between the markers";
-const CONTRACT_RE = /<!-- deployment-verify:v1 -->\s*(?:<details>[\s\S]*?<\/summary>\s*)?```json\s*([\s\S]*?)```\s*(?:<\/details>\s*)?<!-- \/deployment-verify:v1 -->/;
+const CONTRACT_RE = /<!-- deployment-verify:v1 -->\s*(?:<details>[\s\S]*?<\/summary>\s*)?```json\s*([\s\S]*?)```(?:(?:(?!```|<!-- \/deployment-verify:v1 -->)[\s\S])*?<\/details>)?\s*<!-- \/deployment-verify:v1 -->/;
 // aw-verify's `intent` region of the PR's verify report (its writer is aw-verify/scripts/verify-comment.mjs;
 // L1 G132 keeps this reader and that writer's parseIntent in step).
 const INTENT_RE = /<!-- verify:section=intent -->([\s\S]*?)<!-- \/verify:section=intent -->/;
@@ -1297,15 +1298,21 @@ async function selfTest() {
 	// A start marker whose block does not match says "malformed", never "no contract"; an absent block still says "no contract".
 	{
 		const json = '```json\n{"service":"api","root_spans":["GET /x"]}\n```';
-		const prose = `<!-- deployment-verify:v1 -->\n<details><summary>🚦 Deployment contract</summary>\n\n${json}\n\nWhy this threshold: the path is hot.\n\n</details>\n<!-- /deployment-verify:v1 -->`;
+		const open = "<!-- deployment-verify:v1 -->\n<details><summary>🚦 Deployment contract</summary>\n\n";
+		const explainer = `${open}${json}\n\n> ℹ️ **How to read this.** \`root_spans\` are watched.\n\n</details>\n<!-- /deployment-verify:v1 -->`;
+		const proseOutside = `${open}${json}\n\n</details>\nWhy this threshold: the path is hot.\n<!-- /deployment-verify:v1 -->`;
+		const proseBefore = `${open}Why this threshold: the path is hot.\n\n${json}\n\n</details>\n<!-- /deployment-verify:v1 -->`;
+		const fenceInExplainer = `${open}${json}\n\nSee:\n${json}\n\n</details>\n<!-- /deployment-verify:v1 -->`;
 		const twoFences = `<!-- deployment-verify:v1 -->\n${json}\n${json}\n<!-- /deployment-verify:v1 -->`;
 		const malformed = "contract block malformed: only one ```json fence may sit between the markers";
-		const ok = parseContract(prose).error === malformed && parseContract(twoFences).error === malformed
+		const ok = parseContract(explainer).contract?.service === "api"
+			&& parseContract(proseOutside).error === malformed && parseContract(proseBefore).error === malformed
+			&& parseContract(fenceInExplainer).error === malformed && parseContract(twoFences).error === malformed
 			&& parseContract("No block here.").error?.startsWith("no contract") && parseContract("").error?.startsWith("no contract")
 			&& parseContract("Add a `<!-- deployment-verify:v1 -->` block before the merge.").error?.startsWith("no contract")
 			&& parseContract(`<!-- deployment-verify:v1 -->\n${json}\n<!-- /deployment-verify:v1 -->`).contract?.service === "api";
 		if (!ok) failed++;
-		console.log(`${ok ? "ok  " : "FAIL"} a block with prose or a second fence between the markers is "malformed", a missing one "no contract"`);
+		console.log(`${ok ? "ok  " : "FAIL"} an explainer after the JSON inside <details> parses; other prose or a second fence is "malformed", a missing block "no contract"`);
 	}
 	// --draft-contract --from-plan: criteria from the brief, flag.key only when the brief names exactly one flag.
 	{
