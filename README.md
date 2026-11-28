@@ -160,8 +160,8 @@ How it works inside: [`full-tier.md`](./skills/workflow/autonomous-workflow/aw/r
 ```
 
 1. **Build & review.** Runs [`aw`](#featured-autonomous-workflow), whose agent review loops until the diff is clean, and holds when a required companion (review, PR, quality pass, verification) did not run.
-2. **Verify.** Undrafts the PR, waits for real CI, gets it green with [`prepare`](./skills/delivery/prepare/SKILL.md), and requires a verify report that proves every acceptance criterion.
-3. **Merge.** A script gate refuses a user-visible change that needs a rollout (a new route, a large diff) without a feature-flag contract, then squash-merges. A small change may skip the flag with a classed marker.
+2. **Verify.** Undrafts the PR, waits for real CI, gets it green with [`prepare`](./skills/delivery/prepare/SKILL.md), resolves every review thread, and requires a verify report that proves every acceptance criterion.
+3. **Merge.** A script gate refuses a PR with an unresolved review thread, and refuses a user-visible change that needs a rollout (a new route, a large diff) without a feature-flag contract, then squash-merges. A small change may skip the flag with a classed marker.
 4. **Deliver.** Reads `main`'s pipeline for the merge commit, fixes a red one once, and reverts the merge when the fix stays red.
 
 One sticky comment on the PR shows where the run is, with a status card for every state ([gallery](./skills/workflow/atelier/scripts/fixtures/comments/README.md)); re-running `/atelier <pr>` resumes at the first incomplete stage.
@@ -278,6 +278,10 @@ Forks, other tools, the VS Code extension, and per-project plug-ins: [`docs/setu
 Installed as the Claude Code plugin (`/plugin install mthines-agent-skills@mthines`, see [`docs/setup.md`](./docs/setup.md)), the root plugin also ships two hooks.
 When you read a file they fetch its `codebase-knowledge` records from LoreKit in the background, and before you edit it they add at most two one-line summaries to context, capped at eight lines per session.
 They need a LoreKit connection and do nothing without one; details in [`docs/development.md`](./docs/development.md#root-plugin-hooks).
+
+**Review threads stay resolved through an `/atelier` run.**
+The `atelier-guard` plugin (`/plugin install atelier-guard@agent-skills-plugins`) adds hooks that act only in a session that started `/atelier`: it shows the PR's open threads and CI when the run starts, denies a merge or a Ready `proceed` record while a thread is open, and stops the session once when threads open after Ready.
+It fails open when GitHub is unreachable; the merge gate stays the hard stop. Details: [`plugins/atelier-guard/README.md`](./plugins/atelier-guard/README.md).
 
 ## Contributing
 

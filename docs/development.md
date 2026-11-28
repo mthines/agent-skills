@@ -8,7 +8,7 @@ The root [`CLAUDE.md`](../CLAUDE.md) keeps only the one-line rules; this file ho
 ```
 skills/                   48 skills, each with SKILL.md (some with rules/, references/, templates/, scripts/)
 agents/                   3 agents (pr-reviewer, branch-reviewer, feature-pr-verifier)
-plugins/                  3 Claude Code plugins (agent-tasks-hooks, pr-relevance-memory, pr-reviewer-shape-guard)
+plugins/                  4 Claude Code plugins (agent-tasks-hooks, atelier-guard, pr-relevance-memory, pr-reviewer-shape-guard)
 packages/                 VS Code extension (vscode-agent-tasks)
 .claude-plugin/           marketplace.json — plugin distribution manifest
 scripts/                  Local symlink sync (scripts/sync-symlinks.sh)
@@ -116,6 +116,14 @@ Claude Code lifecycle hook plugin for the Agent Tasks VS Code extension; details
 - Every emitted event carries `schemaVersion: 1`; the extension rejects a known `schemaVersion` that is not `1` and accepts a missing one for backwards compatibility.
 - The sentinel file `${CLAUDE_PLUGIN_DATA}/sentinel` controls activation.
 - Validate with `claude plugin validate plugins/agent-tasks-hooks`.
+
+### `atelier-guard`
+
+Hooks that keep an `/atelier` session from moving past unresolved review threads; details in [`plugins/atelier-guard/README.md`](../plugins/atelier-guard/README.md).
+
+- One script, `bin/guard.mjs --event <UserPromptSubmit|PreToolUse|Stop>`, silent unless the session's marker exists under `${ATELIER_GUARD_DIR:-~/.claude/state/atelier-guard}`.
+- Reads threads through the installed `prepare` skill's `scripts/threads.mjs`; exits 0 with no output on every error.
+- Test with `node plugins/atelier-guard/bin/guard.mjs --self-test`; validate with `claude plugin validate plugins/atelier-guard`.
 
 ### `pr-reviewer-shape-guard`
 
