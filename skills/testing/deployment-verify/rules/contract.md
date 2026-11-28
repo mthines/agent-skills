@@ -78,6 +78,18 @@ One fenced JSON block between the markers, anywhere in the PR body, inside the `
 <!-- /deployment-verify:v1 -->
 ````
 
+| Field | Meaning |
+| --- | --- |
+| `service` | Resource `service.name` the change runs in |
+| `root_spans` | SERVER span names the flag changes; errors and latency are read here |
+| `flag` | The flag the change ships behind; `provider` names a `release.yml` → `flags.providers[].name`. Omit for a change with no flag |
+| `cohort` | Required with a `flag` whose provider steps it, ignored without one; none for a `rollout: pr` provider, whose follow-up PR is measured before/after ([`config.md` § Flag providers](./config.md#flag-providers)). The span attribute naming the cohort, its flag-on (`test`) and flag-off (`control`) values, and `on`: `root` or `child` ([`telemetry.md`](./telemetry.md)) |
+| `env` | Optional `release.yml` environment for this change; default is `--env`, else `production`. An explicit `--env` flag overrides it. Lets one `--all` run verify a backend and a UI PR that detect on different attributes |
+| `reversibility` | `flag`, `redeploy`, or `irreversible` |
+| `thresholds` | Optional; may only tighten `release.yml` thresholds |
+| `steps` | Optional; overrides `release.yml` → `steps` for this change |
+| `model` | Optional; the model that wrote the change (`claude-opus-5-5`). The earned-autonomy signal resets when it changes ([`autonomy.md`](./autonomy.md)) |
+
 ## How to read
 
 Put the **How to read this.** explainer above after the JSON fence, inside `<details>`, as a quote that opens with `> ℹ️ **How to read this.**`, so it stands apart from the JSON when a reviewer expands the block.
@@ -91,18 +103,6 @@ The explainer is the only text allowed between the markers: it sits after the fe
 ✗ > [!NOTE] inside <details>                                             → renders as a plain quote with a literal [!NOTE]
 ✓ ```json … ``` then > ℹ️ **How to read this.** … then </details>
 ```
-
-| Field | Meaning |
-| --- | --- |
-| `service` | Resource `service.name` the change runs in |
-| `root_spans` | SERVER span names the flag changes; errors and latency are read here |
-| `flag` | The flag the change ships behind; `provider` names a `release.yml` → `flags.providers[].name`. Omit for a change with no flag |
-| `cohort` | Required with a `flag` whose provider steps it, ignored without one; none for a `rollout: pr` provider, whose follow-up PR is measured before/after ([`config.md` § Flag providers](./config.md#flag-providers)). The span attribute naming the cohort, its flag-on (`test`) and flag-off (`control`) values, and `on`: `root` or `child` ([`telemetry.md`](./telemetry.md)) |
-| `env` | Optional `release.yml` environment for this change; default is `--env`, else `production`. An explicit `--env` flag overrides it. Lets one `--all` run verify a backend and a UI PR that detect on different attributes |
-| `reversibility` | `flag`, `redeploy`, or `irreversible` |
-| `thresholds` | Optional; may only tighten `release.yml` thresholds |
-| `steps` | Optional; overrides `release.yml` → `steps` for this change |
-| `model` | Optional; the model that wrote the change (`claude-opus-5-5`). The earned-autonomy signal resets when it changes ([`autonomy.md`](./autonomy.md)) |
 
 ## Validate before step 1
 
