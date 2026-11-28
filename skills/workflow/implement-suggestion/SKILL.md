@@ -143,6 +143,7 @@ Should-fix / Nice-to-have do not override; record them in the pack.
 
 Write `.agent/<branch>/suggestion-pack.md` per PR from [`templates/suggestion-pack.md`](./templates/suggestion-pack.md): every `apply` change with file:line, the proposed edit, comment author and ID, and the `/critical` + `/confidence` evidence.
 The pack is plan.md-shaped — one Acceptance Criterion per applied change, and a `Mode: existing-pr` header meaning "commit and push to the existing branch; do not open a new PR".
+When an `apply` comment flags one row of a table in an agent prompt doc, sweep the whole contract and widen that entry to every file it touches, per [`rules/contract-sweep.md`](./rules/contract-sweep.md).
 
 Once the pack names its files, read the `codebase-knowledge` signal for exactly those paths and fold matches into the pack as apply-time constraints, per [`rules/self-improvement-loop.md § Cross-bucket read — codebase-knowledge`](./rules/self-improvement-loop.md#cross-bucket-read--codebase-knowledge-phase-5-apply-seam).
 The worker reads no other memory.
@@ -249,6 +250,7 @@ LoreKit is optional; without `memory.*` tools every loop is a silent no-op.
 | [`comment-fetching`](./rules/comment-fetching.md) | Phase 2 |
 | [`comment-classification`](./rules/comment-classification.md) | Phase 3 |
 | [`validation-gates`](./rules/validation-gates.md) | Phase 4 |
+| [`contract-sweep`](./rules/contract-sweep.md) | Phase 5, when an `apply` comment flags one row of a table in an agent prompt doc; re-checked before that comment's commit |
 | [`handoff`](./rules/handoff.md) | Phase 6 — who applies, worker dispatch + prompt; rationale: [`apply-context`](./references/apply-context.md) |
 | [`outcome-emit`](./rules/outcome-emit.md) | Phase 7, and per `--watch` iteration, when LoreKit is connected |
 | [`watch-mode`](./rules/watch-mode.md) | When `--watch` is set |

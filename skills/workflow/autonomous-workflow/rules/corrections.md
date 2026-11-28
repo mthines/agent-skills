@@ -21,6 +21,7 @@ Everything not listed — how to explore, how to plan, when to use sub-agents, h
 - [C4 — Finish on the full suite, not only the checks](#c4--finish-on-the-full-suite-not-only-the-checks)
 - [C5 — A UI spec is written against the built UI and run](#c5--a-ui-spec-is-written-against-the-built-ui-and-run)
 - [C6 — A new write, status, or state path copies the nearest existing one](#c6--a-new-write-status-or-state-path-copies-the-nearest-existing-one)
+- [C7 — A review-agent change is proven by a review of its own PR](#c7--a-review-agent-change-is-proven-by-a-review-of-its-own-pr)
 
 ## C1 — Every stated requirement and default is a check
 
@@ -152,3 +153,19 @@ s.store.UpdateWebhookStatusInPlace(ctx, tx, accountID, id, status)
 
 Two of two workflow runs on one ticket chose the generic write path while the unaided run found the in-place one; a fresh-eyes reviewer did not catch it either.
 
+## C7 — A review-agent change is proven by a review of its own PR
+
+When the diff changes a review agent (`pr-reviewer`, `branch-reviewer`, a lens, or a rule under `agents/shared/rules/`), its prompt or button templates, or the shape of the review body it posts, run that review against the PR you opened before calling the work done.
+Record in the Progress Log and the PR's verify report: the posted review URL, plus the verbatim posted artifact or its verdict and finding count.
+When the installed agent (`~/.claude/agents/<name>.md`) does not resolve to this worktree, follow the branch's agent definition in this context and post the review yourself; never skip the run.
+A green L1 or `CHECKS M/M PASS` alone does not count as proof, because it cannot tell a working agent change from a plausible prose edit.
+
+```text
+# ✗ Wrong — the agent's posted-body shape changed, and the only evidence is the static checks
+verify run: L1 PASS, CHECKS 4/4 PASS
+
+# ✓ Right — the changed agent reviewed its own PR, and the posted artifact is quoted
+dogfood: pr-reviewer (branch definition, run in context) on #<n> — verdict WARN, 2 findings
+  review: https://github.com/<owner>/<repo>/pull/<n>#pullrequestreview-<id>
+  body: <the posted review body, verbatim>
+```
