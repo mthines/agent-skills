@@ -59,7 +59,7 @@ export function classify(command) {
 	const c = String(command || "");
 	if (/\bgh\s+pr\s+merge\b/.test(c)) return "merge";
 	if (/\bgh\s+api\b/.test(c) && /\/pulls\/\d+\/merge\b/.test(c) && /(-X|--method)[\s=]*PUT\b/i.test(c)) return "merge";
-	if (/state\.mjs\b/.test(c) && /--record\b/.test(c) && /--stage[\s=]+ready\b/.test(c) && /--decision[\s=]+proceed\b/.test(c)) return "ready-proceed";
+	if (/state\.mjs\b/.test(c) && /--record\b/.test(c) && /--stage[\s=]+["']?ready\b/.test(c) && /--decision[\s=]+["']?proceed\b/.test(c)) return "ready-proceed";
 	return null;
 }
 
@@ -179,6 +179,7 @@ async function selfTest() {
 	t("classify: gh pr merge", classify(`gh pr merge ${U} --squash`) === "merge");
 	t("classify: the REST merge route", classify("gh api -X PUT repos/acme/web/pulls/41/merge") === "merge");
 	t("classify: a Ready proceed record", classify(`node state.mjs --record --stage ready --decision proceed --head abc --pr ${U}`) === "ready-proceed");
+	t("classify: quoted Ready proceed values still count", classify(`node state.mjs --record --stage "ready" --decision 'proceed' --head abc`) === "ready-proceed");
 	t("classify: a Merge proceed record is not blocked (written after the merge)", classify(`node state.mjs --record --stage merge --decision proceed --head abc --pr ${U}`) === null);
 	t("classify: a Ready hold record is not blocked", classify(`node state.mjs --record --stage ready --decision hold --head abc`) === null);
 	t("classify: gh pr view is not a merge", classify(`gh pr view ${U}`) === null);

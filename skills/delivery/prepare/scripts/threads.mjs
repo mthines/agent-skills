@@ -39,8 +39,11 @@ export function classify(nodes, { head = null, expectedHead = null } = {}) {
 	return { ...base, state: "open", reason: `${unresolved.length} unresolved at ${at}: ${names}` };
 }
 
-// The pages of a `gh api graphql` response → { head, nodes }.
+// The pages of a `gh api graphql` response → { head, nodes }. Anything else (no pullRequest, no head, this script's own
+// printed output) throws, so a wrong file never reads as zero threads.
 export function fromResponses(pages) {
+	const pr = pages[0]?.data?.repository?.pullRequest;
+	if (!pr?.headRefOid) throw new Error("not a gh api graphql response of threads.mjs's query (no pullRequest.headRefOid)");
 	const head = pages[0]?.data?.repository?.pullRequest?.headRefOid ?? null;
 	const nodes = pages.flatMap((p) => p?.data?.repository?.pullRequest?.reviewThreads?.nodes ?? []);
 	return { head, nodes };
@@ -107,6 +110,15 @@ function selfTest() {
 		threw = e.message;
 	}
 	t("a GraphQL error throws, never reads as clear", /denied/.test(threw));
+	for (const bad of [{ state: "open", head: "abc1234def", count: 2 }, { data: { repository: { pullRequest: null } } }]) {
+		let msg = "";
+		try {
+			fromResponses([bad]);
+		} catch (e) {
+			msg = e.message;
+		}
+		t(`a wrong-shape response throws, never reads as clear: ${JSON.stringify(bad).slice(0, 40)}`, /not a gh api graphql response/.test(msg));
+	}
 	console.log(`threads self-test: ${pass} passed, ${fail} failed`);
 	return fail === 0 ? 0 : 1;
 }
