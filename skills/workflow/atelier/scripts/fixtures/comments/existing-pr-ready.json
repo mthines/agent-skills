@@ -22,6 +22,12 @@
           "test"
         ],
         "reason": "1 required check ran and passed at 8e0b152"
+      },
+      "threads": {
+        "state": "clear",
+        "head": "8e0b152270c509ca9634c6cd3363da87f98bd0ad",
+        "count": 0,
+        "reason": "every review thread resolved at 8e0b152 (2)"
       }
     }
   },

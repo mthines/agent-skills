@@ -127,13 +127,14 @@ State: [`existing-pr-ready.json`](existing-pr-ready.json)
 **Next:** Merge runs the merge gate, then squash-merges. Atelier carries on by itself.
 
 **CI at `8e0b152`:** 🟢 1 required check ran and passed at 8e0b152 (`test`)
+**Review threads at `8e0b152`:** 🟢 every review thread resolved at 8e0b152 (2)
 **Preflight:** `limited — 1 gap (flag-provider)`
 
 Re-run `/atelier https://github.com/mthines/reaper-mcp/pull/195` to resume at the first incomplete stage.
 
 </details>
 
-<!-- atelier:v1:state {"v":1,"pr":"https://github.com/mthines/reaper-mcp/pull/195","stages":{"build":{"decision":"skipped","at":"2026-11-25T13:27:26.793Z","sha":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","reason":"existing PR"},"ready":{"decision":"proceed","at":"2026-11-25T13:27:43.081Z","sha":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","reason":"reviewed (WARN, no findings); mergeable, no open threads; CI green at head","ci":{"state":"green","ran":true,"head":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","basis":"required","ran_checks":["test"],"reason":"1 required check ran and passed at 8e0b152"}}},"preflight":"PREFLIGHT: limited — 1 gap (flag-provider)","stage":"ready","refusal":null} -->
+<!-- atelier:v1:state {"v":1,"pr":"https://github.com/mthines/reaper-mcp/pull/195","stages":{"build":{"decision":"skipped","at":"2026-11-25T13:27:26.793Z","sha":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","reason":"existing PR"},"ready":{"decision":"proceed","at":"2026-11-25T13:27:43.081Z","sha":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","reason":"reviewed (WARN, no findings); mergeable, no open threads; CI green at head","ci":{"state":"green","ran":true,"head":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","basis":"required","ran_checks":["test"],"reason":"1 required check ran and passed at 8e0b152"},"threads":{"state":"clear","head":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","count":0,"reason":"every review thread resolved at 8e0b152 (2)"}}},"preflight":"PREFLIGHT: limited — 1 gap (flag-provider)","stage":"ready","refusal":null} -->
 
 <details>
 <summary>Markdown source</summary>
@@ -159,13 +160,14 @@ Re-run `/atelier https://github.com/mthines/reaper-mcp/pull/195` to resume at th
 **Next:** Merge runs the merge gate, then squash-merges. Atelier carries on by itself.
 
 **CI at `8e0b152`:** 🟢 1 required check ran and passed at 8e0b152 (`test`)
+**Review threads at `8e0b152`:** 🟢 every review thread resolved at 8e0b152 (2)
 **Preflight:** `limited — 1 gap (flag-provider)`
 
 Re-run `/atelier https://github.com/mthines/reaper-mcp/pull/195` to resume at the first incomplete stage.
 
 </details>
 
-<!-- atelier:v1:state {"v":1,"pr":"https://github.com/mthines/reaper-mcp/pull/195","stages":{"build":{"decision":"skipped","at":"2026-11-25T13:27:26.793Z","sha":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","reason":"existing PR"},"ready":{"decision":"proceed","at":"2026-11-25T13:27:43.081Z","sha":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","reason":"reviewed (WARN, no findings); mergeable, no open threads; CI green at head","ci":{"state":"green","ran":true,"head":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","basis":"required","ran_checks":["test"],"reason":"1 required check ran and passed at 8e0b152"}}},"preflight":"PREFLIGHT: limited — 1 gap (flag-provider)","stage":"ready","refusal":null} -->
+<!-- atelier:v1:state {"v":1,"pr":"https://github.com/mthines/reaper-mcp/pull/195","stages":{"build":{"decision":"skipped","at":"2026-11-25T13:27:26.793Z","sha":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","reason":"existing PR"},"ready":{"decision":"proceed","at":"2026-11-25T13:27:43.081Z","sha":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","reason":"reviewed (WARN, no findings); mergeable, no open threads; CI green at head","ci":{"state":"green","ran":true,"head":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","basis":"required","ran_checks":["test"],"reason":"1 required check ran and passed at 8e0b152"},"threads":{"state":"clear","head":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","count":0,"reason":"every review thread resolved at 8e0b152 (2)"}}},"preflight":"PREFLIGHT: limited — 1 gap (flag-provider)","stage":"ready","refusal":null} -->
 ````
 
 </details>
@@ -628,13 +630,14 @@ State: [`merge-refused.json`](merge-refused.json)
 | ⚪ | Deliver | not reached | | | |
 
 **CI at `8e0b152`:** 🟢 1 required check ran and passed at 8e0b152 (`test`)
+**Review threads at `8e0b152`:** 🟢 every review thread resolved at 8e0b152 (2)
 **Preflight:** `ok — 0 gaps`
 
 Re-run `/atelier https://github.com/mthines/reaper-mcp/pull/195` to resume at the first incomplete stage.
 
 </details>
 
-<!-- atelier:v1:state {"v":1,"pr":"https://github.com/mthines/reaper-mcp/pull/195","stages":{"build":{"decision":"proceed","at":"2026-11-25T13:02:10.000Z","sha":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","reason":"aw Full: draft PR, review-loop converged"},"ready":{"decision":"proceed","at":"2026-11-25T13:27:43.081Z","sha":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","reason":"reviewed (WARN, no findings); mergeable, no open threads; CI green at head","ci":{"state":"green","ran":true,"head":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","basis":"required","ran_checks":["test"],"reason":"1 required check ran and passed at 8e0b152"}},"merge":{"decision":"refuse","at":"2026-11-25T13:30:00.000Z","sha":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","reason":"user-visible diff without a flag contract in the PR body"}},"preflight":"PREFLIGHT: ok — 0 gaps","stage":"merge","refusal":"user-visible diff without a flag contract in the PR body"} -->
+<!-- atelier:v1:state {"v":1,"pr":"https://github.com/mthines/reaper-mcp/pull/195","stages":{"build":{"decision":"proceed","at":"2026-11-25T13:02:10.000Z","sha":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","reason":"aw Full: draft PR, review-loop converged"},"ready":{"decision":"proceed","at":"2026-11-25T13:27:43.081Z","sha":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","reason":"reviewed (WARN, no findings); mergeable, no open threads; CI green at head","ci":{"state":"green","ran":true,"head":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","basis":"required","ran_checks":["test"],"reason":"1 required check ran and passed at 8e0b152"},"threads":{"state":"clear","head":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","count":0,"reason":"every review thread resolved at 8e0b152 (2)"}},"merge":{"decision":"refuse","at":"2026-11-25T13:30:00.000Z","sha":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","reason":"user-visible diff without a flag contract in the PR body"}},"preflight":"PREFLIGHT: ok — 0 gaps","stage":"merge","refusal":"user-visible diff without a flag contract in the PR body"} -->
 
 <details>
 <summary>Markdown source</summary>
@@ -667,13 +670,14 @@ Re-run `/atelier https://github.com/mthines/reaper-mcp/pull/195` to resume at th
 | ⚪ | Deliver | not reached | | | |
 
 **CI at `8e0b152`:** 🟢 1 required check ran and passed at 8e0b152 (`test`)
+**Review threads at `8e0b152`:** 🟢 every review thread resolved at 8e0b152 (2)
 **Preflight:** `ok — 0 gaps`
 
 Re-run `/atelier https://github.com/mthines/reaper-mcp/pull/195` to resume at the first incomplete stage.
 
 </details>
 
-<!-- atelier:v1:state {"v":1,"pr":"https://github.com/mthines/reaper-mcp/pull/195","stages":{"build":{"decision":"proceed","at":"2026-11-25T13:02:10.000Z","sha":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","reason":"aw Full: draft PR, review-loop converged"},"ready":{"decision":"proceed","at":"2026-11-25T13:27:43.081Z","sha":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","reason":"reviewed (WARN, no findings); mergeable, no open threads; CI green at head","ci":{"state":"green","ran":true,"head":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","basis":"required","ran_checks":["test"],"reason":"1 required check ran and passed at 8e0b152"}},"merge":{"decision":"refuse","at":"2026-11-25T13:30:00.000Z","sha":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","reason":"user-visible diff without a flag contract in the PR body"}},"preflight":"PREFLIGHT: ok — 0 gaps","stage":"merge","refusal":"user-visible diff without a flag contract in the PR body"} -->
+<!-- atelier:v1:state {"v":1,"pr":"https://github.com/mthines/reaper-mcp/pull/195","stages":{"build":{"decision":"proceed","at":"2026-11-25T13:02:10.000Z","sha":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","reason":"aw Full: draft PR, review-loop converged"},"ready":{"decision":"proceed","at":"2026-11-25T13:27:43.081Z","sha":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","reason":"reviewed (WARN, no findings); mergeable, no open threads; CI green at head","ci":{"state":"green","ran":true,"head":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","basis":"required","ran_checks":["test"],"reason":"1 required check ran and passed at 8e0b152"},"threads":{"state":"clear","head":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","count":0,"reason":"every review thread resolved at 8e0b152 (2)"}},"merge":{"decision":"refuse","at":"2026-11-25T13:30:00.000Z","sha":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","reason":"user-visible diff without a flag contract in the PR body"}},"preflight":"PREFLIGHT: ok — 0 gaps","stage":"merge","refusal":"user-visible diff without a flag contract in the PR body"} -->
 ````
 
 </details>
@@ -707,13 +711,14 @@ State: [`merged.json`](merged.json)
 **Next:** Deliver checks `main`'s pipeline for the merge commit. Atelier carries on by itself.
 
 **CI at `8e0b152`:** 🟢 1 required check ran and passed at 8e0b152 (`test`)
+**Review threads at `8e0b152`:** 🟢 every review thread resolved at 8e0b152 (2)
 **Preflight:** `ok — 0 gaps`
 
 Re-run `/atelier https://github.com/mthines/reaper-mcp/pull/195` to resume at the first incomplete stage.
 
 </details>
 
-<!-- atelier:v1:state {"v":1,"pr":"https://github.com/mthines/reaper-mcp/pull/195","stages":{"build":{"decision":"proceed","at":"2026-11-25T13:02:10.000Z","sha":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","reason":"aw Full: draft PR, review-loop converged"},"ready":{"decision":"proceed","at":"2026-11-25T13:27:43.081Z","sha":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","reason":"reviewed (WARN, no findings); mergeable, no open threads; CI green at head","ci":{"state":"green","ran":true,"head":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","basis":"required","ran_checks":["test"],"reason":"1 required check ran and passed at 8e0b152"}},"merge":{"decision":"proceed","at":"2026-11-25T13:31:05.000Z","sha":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","reason":"squash-merged as 4f1c2d9; no user-visible diff"}},"preflight":"PREFLIGHT: ok — 0 gaps","stage":"merge","refusal":null} -->
+<!-- atelier:v1:state {"v":1,"pr":"https://github.com/mthines/reaper-mcp/pull/195","stages":{"build":{"decision":"proceed","at":"2026-11-25T13:02:10.000Z","sha":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","reason":"aw Full: draft PR, review-loop converged"},"ready":{"decision":"proceed","at":"2026-11-25T13:27:43.081Z","sha":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","reason":"reviewed (WARN, no findings); mergeable, no open threads; CI green at head","ci":{"state":"green","ran":true,"head":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","basis":"required","ran_checks":["test"],"reason":"1 required check ran and passed at 8e0b152"},"threads":{"state":"clear","head":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","count":0,"reason":"every review thread resolved at 8e0b152 (2)"}},"merge":{"decision":"proceed","at":"2026-11-25T13:31:05.000Z","sha":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","reason":"squash-merged as 4f1c2d9; no user-visible diff"}},"preflight":"PREFLIGHT: ok — 0 gaps","stage":"merge","refusal":null} -->
 
 <details>
 <summary>Markdown source</summary>
@@ -739,13 +744,14 @@ Re-run `/atelier https://github.com/mthines/reaper-mcp/pull/195` to resume at th
 **Next:** Deliver checks `main`'s pipeline for the merge commit. Atelier carries on by itself.
 
 **CI at `8e0b152`:** 🟢 1 required check ran and passed at 8e0b152 (`test`)
+**Review threads at `8e0b152`:** 🟢 every review thread resolved at 8e0b152 (2)
 **Preflight:** `ok — 0 gaps`
 
 Re-run `/atelier https://github.com/mthines/reaper-mcp/pull/195` to resume at the first incomplete stage.
 
 </details>
 
-<!-- atelier:v1:state {"v":1,"pr":"https://github.com/mthines/reaper-mcp/pull/195","stages":{"build":{"decision":"proceed","at":"2026-11-25T13:02:10.000Z","sha":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","reason":"aw Full: draft PR, review-loop converged"},"ready":{"decision":"proceed","at":"2026-11-25T13:27:43.081Z","sha":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","reason":"reviewed (WARN, no findings); mergeable, no open threads; CI green at head","ci":{"state":"green","ran":true,"head":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","basis":"required","ran_checks":["test"],"reason":"1 required check ran and passed at 8e0b152"}},"merge":{"decision":"proceed","at":"2026-11-25T13:31:05.000Z","sha":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","reason":"squash-merged as 4f1c2d9; no user-visible diff"}},"preflight":"PREFLIGHT: ok — 0 gaps","stage":"merge","refusal":null} -->
+<!-- atelier:v1:state {"v":1,"pr":"https://github.com/mthines/reaper-mcp/pull/195","stages":{"build":{"decision":"proceed","at":"2026-11-25T13:02:10.000Z","sha":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","reason":"aw Full: draft PR, review-loop converged"},"ready":{"decision":"proceed","at":"2026-11-25T13:27:43.081Z","sha":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","reason":"reviewed (WARN, no findings); mergeable, no open threads; CI green at head","ci":{"state":"green","ran":true,"head":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","basis":"required","ran_checks":["test"],"reason":"1 required check ran and passed at 8e0b152"},"threads":{"state":"clear","head":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","count":0,"reason":"every review thread resolved at 8e0b152 (2)"}},"merge":{"decision":"proceed","at":"2026-11-25T13:31:05.000Z","sha":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","reason":"squash-merged as 4f1c2d9; no user-visible diff"}},"preflight":"PREFLIGHT: ok — 0 gaps","stage":"merge","refusal":null} -->
 ````
 
 </details>
@@ -779,13 +785,14 @@ State: [`delivered.json`](delivered.json)
 **Done:** merged, and `main`'s pipeline is green for the merge commit.
 
 **CI at `8e0b152`:** 🟢 1 required check ran and passed at 8e0b152 (`test`)
+**Review threads at `8e0b152`:** 🟢 every review thread resolved at 8e0b152 (2)
 **Preflight:** `ok — 0 gaps`
 
 Re-run `/atelier https://github.com/mthines/reaper-mcp/pull/195` to resume at the first incomplete stage.
 
 </details>
 
-<!-- atelier:v1:state {"v":1,"pr":"https://github.com/mthines/reaper-mcp/pull/195","stages":{"build":{"decision":"proceed","at":"2026-11-25T13:02:10.000Z","sha":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","reason":"aw Full: draft PR, review-loop converged"},"ready":{"decision":"proceed","at":"2026-11-25T13:27:43.081Z","sha":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","reason":"reviewed (WARN, no findings); mergeable, no open threads; CI green at head","ci":{"state":"green","ran":true,"head":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","basis":"required","ran_checks":["test"],"reason":"1 required check ran and passed at 8e0b152"}},"merge":{"decision":"proceed","at":"2026-11-25T13:31:05.000Z","sha":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","reason":"squash-merged as 4f1c2d9; no user-visible diff"},"deliver":{"decision":"proceed","at":"2026-11-25T13:44:12.000Z","sha":"4f1c2d9a0b","reason":"main green for 4f1c2d9"}},"preflight":"PREFLIGHT: ok — 0 gaps","stage":"deliver","refusal":null} -->
+<!-- atelier:v1:state {"v":1,"pr":"https://github.com/mthines/reaper-mcp/pull/195","stages":{"build":{"decision":"proceed","at":"2026-11-25T13:02:10.000Z","sha":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","reason":"aw Full: draft PR, review-loop converged"},"ready":{"decision":"proceed","at":"2026-11-25T13:27:43.081Z","sha":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","reason":"reviewed (WARN, no findings); mergeable, no open threads; CI green at head","ci":{"state":"green","ran":true,"head":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","basis":"required","ran_checks":["test"],"reason":"1 required check ran and passed at 8e0b152"},"threads":{"state":"clear","head":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","count":0,"reason":"every review thread resolved at 8e0b152 (2)"}},"merge":{"decision":"proceed","at":"2026-11-25T13:31:05.000Z","sha":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","reason":"squash-merged as 4f1c2d9; no user-visible diff"},"deliver":{"decision":"proceed","at":"2026-11-25T13:44:12.000Z","sha":"4f1c2d9a0b","reason":"main green for 4f1c2d9"}},"preflight":"PREFLIGHT: ok — 0 gaps","stage":"deliver","refusal":null} -->
 
 <details>
 <summary>Markdown source</summary>
@@ -811,13 +818,14 @@ Re-run `/atelier https://github.com/mthines/reaper-mcp/pull/195` to resume at th
 **Done:** merged, and `main`'s pipeline is green for the merge commit.
 
 **CI at `8e0b152`:** 🟢 1 required check ran and passed at 8e0b152 (`test`)
+**Review threads at `8e0b152`:** 🟢 every review thread resolved at 8e0b152 (2)
 **Preflight:** `ok — 0 gaps`
 
 Re-run `/atelier https://github.com/mthines/reaper-mcp/pull/195` to resume at the first incomplete stage.
 
 </details>
 
-<!-- atelier:v1:state {"v":1,"pr":"https://github.com/mthines/reaper-mcp/pull/195","stages":{"build":{"decision":"proceed","at":"2026-11-25T13:02:10.000Z","sha":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","reason":"aw Full: draft PR, review-loop converged"},"ready":{"decision":"proceed","at":"2026-11-25T13:27:43.081Z","sha":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","reason":"reviewed (WARN, no findings); mergeable, no open threads; CI green at head","ci":{"state":"green","ran":true,"head":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","basis":"required","ran_checks":["test"],"reason":"1 required check ran and passed at 8e0b152"}},"merge":{"decision":"proceed","at":"2026-11-25T13:31:05.000Z","sha":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","reason":"squash-merged as 4f1c2d9; no user-visible diff"},"deliver":{"decision":"proceed","at":"2026-11-25T13:44:12.000Z","sha":"4f1c2d9a0b","reason":"main green for 4f1c2d9"}},"preflight":"PREFLIGHT: ok — 0 gaps","stage":"deliver","refusal":null} -->
+<!-- atelier:v1:state {"v":1,"pr":"https://github.com/mthines/reaper-mcp/pull/195","stages":{"build":{"decision":"proceed","at":"2026-11-25T13:02:10.000Z","sha":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","reason":"aw Full: draft PR, review-loop converged"},"ready":{"decision":"proceed","at":"2026-11-25T13:27:43.081Z","sha":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","reason":"reviewed (WARN, no findings); mergeable, no open threads; CI green at head","ci":{"state":"green","ran":true,"head":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","basis":"required","ran_checks":["test"],"reason":"1 required check ran and passed at 8e0b152"},"threads":{"state":"clear","head":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","count":0,"reason":"every review thread resolved at 8e0b152 (2)"}},"merge":{"decision":"proceed","at":"2026-11-25T13:31:05.000Z","sha":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","reason":"squash-merged as 4f1c2d9; no user-visible diff"},"deliver":{"decision":"proceed","at":"2026-11-25T13:44:12.000Z","sha":"4f1c2d9a0b","reason":"main green for 4f1c2d9"}},"preflight":"PREFLIGHT: ok — 0 gaps","stage":"deliver","refusal":null} -->
 ````
 
 </details>
@@ -859,13 +867,14 @@ State: [`deliver-reverted.json`](deliver-reverted.json)
 | ❌ | Deliver | failed | `4f1c2d9` | <relative-time datetime="2026-11-25T14:02:40.000Z">Nov 25, 2026 2:02pm</relative-time> | main red after one fix; reverted by revert PR #202 |
 
 **CI at `8e0b152`:** 🟢 1 required check ran and passed at 8e0b152 (`test`)
+**Review threads at `8e0b152`:** 🟢 every review thread resolved at 8e0b152 (2)
 **Preflight:** `ok — 0 gaps`
 
 Re-run `/atelier https://github.com/mthines/reaper-mcp/pull/195` to resume at the first incomplete stage.
 
 </details>
 
-<!-- atelier:v1:state {"v":1,"pr":"https://github.com/mthines/reaper-mcp/pull/195","stages":{"build":{"decision":"proceed","at":"2026-11-25T13:02:10.000Z","sha":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","reason":"aw Full: draft PR, review-loop converged"},"ready":{"decision":"proceed","at":"2026-11-25T13:27:43.081Z","sha":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","reason":"reviewed (WARN, no findings); mergeable, no open threads; CI green at head","ci":{"state":"green","ran":true,"head":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","basis":"required","ran_checks":["test"],"reason":"1 required check ran and passed at 8e0b152"}},"merge":{"decision":"proceed","at":"2026-11-25T13:31:05.000Z","sha":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","reason":"squash-merged as 4f1c2d9; no user-visible diff"},"deliver":{"decision":"failed","at":"2026-11-25T14:02:40.000Z","sha":"4f1c2d9a0b","reason":"main red after one fix; reverted by revert PR #202"}},"preflight":"PREFLIGHT: ok — 0 gaps","stage":"deliver","refusal":null} -->
+<!-- atelier:v1:state {"v":1,"pr":"https://github.com/mthines/reaper-mcp/pull/195","stages":{"build":{"decision":"proceed","at":"2026-11-25T13:02:10.000Z","sha":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","reason":"aw Full: draft PR, review-loop converged"},"ready":{"decision":"proceed","at":"2026-11-25T13:27:43.081Z","sha":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","reason":"reviewed (WARN, no findings); mergeable, no open threads; CI green at head","ci":{"state":"green","ran":true,"head":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","basis":"required","ran_checks":["test"],"reason":"1 required check ran and passed at 8e0b152"},"threads":{"state":"clear","head":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","count":0,"reason":"every review thread resolved at 8e0b152 (2)"}},"merge":{"decision":"proceed","at":"2026-11-25T13:31:05.000Z","sha":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","reason":"squash-merged as 4f1c2d9; no user-visible diff"},"deliver":{"decision":"failed","at":"2026-11-25T14:02:40.000Z","sha":"4f1c2d9a0b","reason":"main red after one fix; reverted by revert PR #202"}},"preflight":"PREFLIGHT: ok — 0 gaps","stage":"deliver","refusal":null} -->
 
 <details>
 <summary>Markdown source</summary>
@@ -899,13 +908,14 @@ Re-run `/atelier https://github.com/mthines/reaper-mcp/pull/195` to resume at th
 | ❌ | Deliver | failed | `4f1c2d9` | <relative-time datetime="2026-11-25T14:02:40.000Z">Nov 25, 2026 2:02pm</relative-time> | main red after one fix; reverted by revert PR #202 |
 
 **CI at `8e0b152`:** 🟢 1 required check ran and passed at 8e0b152 (`test`)
+**Review threads at `8e0b152`:** 🟢 every review thread resolved at 8e0b152 (2)
 **Preflight:** `ok — 0 gaps`
 
 Re-run `/atelier https://github.com/mthines/reaper-mcp/pull/195` to resume at the first incomplete stage.
 
 </details>
 
-<!-- atelier:v1:state {"v":1,"pr":"https://github.com/mthines/reaper-mcp/pull/195","stages":{"build":{"decision":"proceed","at":"2026-11-25T13:02:10.000Z","sha":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","reason":"aw Full: draft PR, review-loop converged"},"ready":{"decision":"proceed","at":"2026-11-25T13:27:43.081Z","sha":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","reason":"reviewed (WARN, no findings); mergeable, no open threads; CI green at head","ci":{"state":"green","ran":true,"head":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","basis":"required","ran_checks":["test"],"reason":"1 required check ran and passed at 8e0b152"}},"merge":{"decision":"proceed","at":"2026-11-25T13:31:05.000Z","sha":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","reason":"squash-merged as 4f1c2d9; no user-visible diff"},"deliver":{"decision":"failed","at":"2026-11-25T14:02:40.000Z","sha":"4f1c2d9a0b","reason":"main red after one fix; reverted by revert PR #202"}},"preflight":"PREFLIGHT: ok — 0 gaps","stage":"deliver","refusal":null} -->
+<!-- atelier:v1:state {"v":1,"pr":"https://github.com/mthines/reaper-mcp/pull/195","stages":{"build":{"decision":"proceed","at":"2026-11-25T13:02:10.000Z","sha":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","reason":"aw Full: draft PR, review-loop converged"},"ready":{"decision":"proceed","at":"2026-11-25T13:27:43.081Z","sha":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","reason":"reviewed (WARN, no findings); mergeable, no open threads; CI green at head","ci":{"state":"green","ran":true,"head":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","basis":"required","ran_checks":["test"],"reason":"1 required check ran and passed at 8e0b152"},"threads":{"state":"clear","head":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","count":0,"reason":"every review thread resolved at 8e0b152 (2)"}},"merge":{"decision":"proceed","at":"2026-11-25T13:31:05.000Z","sha":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","reason":"squash-merged as 4f1c2d9; no user-visible diff"},"deliver":{"decision":"failed","at":"2026-11-25T14:02:40.000Z","sha":"4f1c2d9a0b","reason":"main red after one fix; reverted by revert PR #202"}},"preflight":"PREFLIGHT: ok — 0 gaps","stage":"deliver","refusal":null} -->
 ````
 
 </details>

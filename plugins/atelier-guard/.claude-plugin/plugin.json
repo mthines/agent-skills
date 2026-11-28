@@ -1,0 +1,9 @@
+{
+  "name": "atelier-guard",
+  "version": "0.1.0",
+  "description": "Hooks for /atelier sessions: inject the PR's review-thread and CI state, deny merging or recording Ready proceed while review threads are open, and block Stop once when threads open after Ready",
+  "author": { "name": "mthines" },
+  "repository": "https://github.com/mthines/agent-skills",
+  "license": "MIT",
+  "keywords": ["atelier", "review-threads", "merge-gate", "hooks"]
+}

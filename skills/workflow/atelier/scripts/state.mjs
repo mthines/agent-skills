@@ -8,7 +8,8 @@
 //   node state.mjs --record --stage <s> --decision <d> --head <sha> [--reason <r>] [--pr <n>] [--body-file <f>]
 //                  --stage deliver records Deliver's result for the comment only; --next never reads it
 //                  [--ci-file <f>] [--preflight <line>]    prints the re-rendered comment body; Ready `proceed`
-//                                                          needs --ci-file: prepare's ci-ran.mjs output, green at --head;
+//                                                          needs --ci-file: prepare's ci-ran.mjs output, green at --head,
+//                  [--threads-file <f>]                    and --threads-file: prepare's threads.mjs output, clear at --head;
 //                                                          --preflight stores preflight.mjs's `PREFLIGHT:` line once;
 //                  [--memory "lorekit=ok,lessons_used=2,bus_failed=0"]   memory counts for the run's trace
 // --next, --companions, and --record also mark the run's telemetry (telemetry.mjs): the stage that opens,
@@ -74,7 +75,16 @@ export function parse(body) {
 // Two shas name the same commit when one is a prefix of the other (a 7-char short sha against a full one).
 export const sameSha = (a, b) => !!a && !!b && (a === b || (Math.min(a.length, b.length) >= 7 && (a.startsWith(b) || b.startsWith(a))));
 
+// Review threads: threads.mjs's JSON, clear on the entry's head. Open threads mean prepare's
+// implement-suggestion --resolve-all left work, or a reviewer posted after it ran.
+export function threadsEvidenceOk(entry, head) {
+	const th = entry?.threads;
+	if (!th || th.state !== "clear" || !th.head) return false;
+	return sameSha(th.head, entry.sha) && (!head || sameSha(th.head, head));
+}
+
 export function readyEvidenceOk(entry, head) {
+	if (!threadsEvidenceOk(entry, head)) return false;
 	const ci = entry?.ci;
 	if (!ci || !ci.head) return false;
 	// No CI in the repo: `--record --no-ci` stored ci-ran's "no checks reported" after checking the repo has no CI workflow.
@@ -84,7 +94,7 @@ export function readyEvidenceOk(entry, head) {
 	return sameSha(ci.head, entry.sha) && (!head || sameSha(ci.head, head));
 }
 
-// The first stage that has not completed. Ready counts as done only with green CI evidence on the current head.
+// The first stage that has not completed. Ready counts as done only with green CI and clear threads on the current head.
 export function next(state, head) {
 	if (!state) return "build";
 	const st = state.stages;
@@ -98,7 +108,7 @@ export function next(state, head) {
 	return "stop";
 }
 
-export function record(state, { stage, decision, head, reason = "", pr = null, ci = null, preflight = null, noCi = false, backfill = false, at = new Date().toISOString() }) {
+export function record(state, { stage, decision, head, reason = "", pr = null, ci = null, threads = null, preflight = null, noCi = false, backfill = false, at = new Date().toISOString() }) {
 	if (!RECORDABLE.includes(stage)) throw new Error(`unknown stage ${stage} (want ${RECORDABLE.join("|")})`);
 	if (!DECISIONS.includes(decision)) throw new Error(`unknown decision ${decision} (want ${DECISIONS.join("|")})`);
 	// Every recorded pair has a pre-rendered card (card.mjs ENDINGS); any other would link a missing image.
@@ -109,6 +119,12 @@ export function record(state, { stage, decision, head, reason = "", pr = null, c
 	if (preflight) s.preflight = preflight;
 	const entry = { decision, at, sha: head || null, reason, ...(backfill ? { backfilled: true } : {}) };
 	if (ci) entry.ci = { state: ci.state, ran: ci.ran, head: ci.head, basis: ci.basis, ran_checks: (ci.ran_checks || []).slice(0, 5), reason: ci.reason, ...(noCi && isNoCiEvidence(ci) ? { no_ci: true } : {}) };
+	if (threads) entry.threads = { state: threads.state, head: threads.head, count: threads.count ?? 0, reason: threads.reason };
+	// Open review threads are unfinished review: Ready `proceed` needs threads.mjs evidence that is clear on this head.
+	if (stage === "ready" && decision === "proceed" && !threadsEvidenceOk(entry, head)) {
+		const got = threads ? `THREADS: ${threads.state} at ${String(threads.head || "?").slice(0, 7)} — ${threads.reason}` : "no --threads-file";
+		throw new Error(`Ready proceed needs THREADS: clear at ${String(head || "?").slice(0, 7)} (prepare's threads.mjs --pr <url> --head <sha> > threads.json; --threads-file threads.json): run prepare (implement-suggestion --resolve-all), or record hold with Needs you: for a thread a human must answer; got ${got}`);
+	}
 	// Skipped CI proves nothing: Ready `proceed` is written only with ci-ran.mjs evidence that is green on this head.
 	if (stage === "ready" && decision === "proceed" && !readyEvidenceOk(entry, head)) {
 		const got = ci ? `CI: ${ci.state} at ${String(ci.head || "?").slice(0, 7)} — ${ci.reason}` : "no --ci-file";
@@ -207,6 +223,8 @@ export function render(state, { assetBase = ASSET_BASE } = {}) {
 	});
 	const ci = state.stages.ready?.ci;
 	const ciLine = ci && `**CI at \`${String(ci.head || "").slice(0, 7)}\`:** ${ci.state === "green" ? "🟢" : ci.no_ci ? "⚪ no CI in this repo —" : "🔴"} ${cell(ci.reason)}${ci.ran_checks?.length ? ` (${ci.ran_checks.map((c) => `\`${cell(c)}\``).join(", ")})` : ""}`;
+	const th = state.stages.ready?.threads;
+	const threadsLine = th && `**Review threads at \`${String(th.head || "").slice(0, 7)}\`:** ${th.state === "clear" ? "🟢" : "🔴"} ${cell(th.reason)}`;
 	const v = verdict(o);
 	const meta = [last?.sha && `head <code>${last.sha.slice(0, 7)}</code>`, latest && `updated ${when(latest)}`].filter(Boolean);
 	const action = actionBlock(state);
@@ -228,8 +246,9 @@ export function render(state, { assetBase = ASSET_BASE } = {}) {
 		"",
 		...(status ? [status, ""] : []),
 		...(ciLine ? [ciLine] : []),
+		...(threadsLine ? [threadsLine] : []),
 		...(preflight ? [`**Preflight:** \`${preflight}\``] : []),
-		...(ciLine || preflight ? [""] : []),
+		...(ciLine || threadsLine || preflight ? [""] : []),
 		`Re-run \`${rerun(state)}\` to resume at the first incomplete stage.`,
 		"",
 		"</details>",
@@ -350,33 +369,47 @@ function selfTest() {
 	s = record(s, { stage: "ready", decision: "failed", head: "a1", reason: "CI red" });
 	t("a failed ready runs ready again", next(s, "a1") === "ready");
 	const green = (head) => ({ state: "green", ran: true, head, basis: "actions", ran_checks: ["test"], reason: "1 GitHub Actions check run ran and passed" });
+	const clear = (head) => ({ state: "clear", head, count: 0, reason: `every review thread resolved at ${head.slice(0, 7)} (2)` });
+	const openTh = (head) => ({ state: "open", head, count: 1, reason: `1 unresolved at ${head.slice(0, 7)}: cursor card.tsx:45` });
 	let threwNoCi = "";
 	try {
-		record(s, { stage: "ready", decision: "proceed", head: "a1" });
+		record(s, { stage: "ready", decision: "proceed", head: "a1", threads: clear("a1") });
 	} catch (e) {
 		threwNoCi = e.message;
 	}
 	t("Ready proceed without CI evidence is refused", /needs green CI evidence/.test(threwNoCi), threwNoCi);
 	let threwSkipped = "";
 	try {
-		record(s, { stage: "ready", decision: "proceed", head: "a1", ci: { state: "not-run", ran: false, head: "a1", reason: "every required check skipped (4)" } });
+		record(s, { stage: "ready", decision: "proceed", head: "a1", ci: { state: "not-run", ran: false, head: "a1", reason: "every required check skipped (4)" }, threads: clear("a1") });
 	} catch (e) {
 		threwSkipped = e.message;
 	}
 	t("Ready proceed on skipped CI is refused", /CI: not-run/.test(threwSkipped), threwSkipped);
 	let threwOther = false;
 	try {
-		record(s, { stage: "ready", decision: "proceed", head: "a1", ci: green("z9") });
+		record(s, { stage: "ready", decision: "proceed", head: "a1", ci: green("z9"), threads: clear("a1") });
 	} catch {
 		threwOther = true;
 	}
 	t("Ready proceed with evidence from another head is refused", threwOther);
-	s = record(s, { stage: "ready", decision: "proceed", head: "a1", ci: green("a1") });
+	const threadsErr = (opts) => { try { record(s, { stage: "ready", decision: "proceed", head: "a1", ci: green("a1"), ...opts }); return ""; } catch (e) { return e.message; } };
+	t("✗ Ready proceed with green CI and no threads evidence is refused", /needs THREADS: clear/.test(threadsErr({})) && /no --threads-file/.test(threadsErr({})), threadsErr({}));
+	t("✗ Ready proceed with open threads is refused, naming them and the fix", /THREADS: open at a1 — 1 unresolved/.test(threadsErr({ threads: openTh("a1") })) && /implement-suggestion --resolve-all/.test(threadsErr({ threads: openTh("a1") })));
+	t("✗ Ready proceed with clear threads from another head is refused", /needs THREADS: clear/.test(threadsErr({ threads: clear("z9") })));
+	t("✓ Ready hold with open threads records, so the run can stop and say Needs you:", record(s, { stage: "ready", decision: "hold", head: "a1", reason: "1 thread needs a human", ci: green("a1"), threads: openTh("a1") }).stages.ready.threads.state === "open");
+	s = record(s, { stage: "ready", decision: "proceed", head: "a1", ci: green("a1"), threads: clear("a1") });
+	t("the threads evidence round-trips and shows in Run details", parse(render(s)).stages.ready.threads.state === "clear" && render(s).includes("**Review threads at `a1`:** 🟢"));
+	const noThreads = structuredClone(s);
+	delete noThreads.stages.ready.threads;
+	t("a Ready proceed recorded before threads evidence existed re-runs ready", next(noThreads, "a1") === "ready");
+	const openNow = structuredClone(s);
+	openNow.stages.ready.threads = openTh("a1");
+	t("a Ready proceed whose threads evidence is open re-runs ready", next(openNow, "a1") === "ready");
 	t("after ready on the same head, merge is next", next(s, "a1") === "merge");
 	t("the CI evidence round-trips through the comment", parse(render(s)).stages.ready.ci.state === "green" && next(parse(render(s)), "a1") === "merge");
 	t("a moved head re-runs ready", next(s, "b2") === "ready");
 	const full = "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678";
-	const short = record(s, { stage: "ready", decision: "proceed", head: full.slice(0, 7), ci: green(full) });
+	const short = record(s, { stage: "ready", decision: "proceed", head: full.slice(0, 7), ci: green(full), threads: clear(full) });
 	t("a short --head with full-sha evidence records, and --next matches either form", next(short, full) === "merge" && next(short, full.slice(0, 7)) === "merge");
 	const legacy = structuredClone(s);
 	delete legacy.stages.ready.ci;
@@ -465,10 +498,10 @@ function selfTest() {
 	t("the checklist file is keyed by the PR URL", /checklist\/acme-web-41\.json$/.test(checklistPath("https://github.com/acme/web/pull/41", "/r")) && throws(() => checklistPath("41", "/r")));
 	// No CI in the repo: ci-ran's "no checks reported", stored with no_ci, counts as Ready evidence; skipped checks never do.
 	const none = { state: "not-run", ran: false, head: "a1", reason: "CI not run at a1: no checks reported" };
-	const noCiState = record(record(null, { stage: "build", decision: "proceed", head: "a1" }), { stage: "ready", decision: "proceed", head: "a1", ci: none, noCi: true });
+	const noCiState = record(record(null, { stage: "build", decision: "proceed", head: "a1" }), { stage: "ready", decision: "proceed", head: "a1", ci: none, noCi: true, threads: clear("a1") });
 	t("✓ Ready proceed --no-ci on no checks reported records and lets merge run", noCiState.stages.ready.ci.no_ci === true && next(noCiState, "a1") === "merge" && render(noCiState).includes("⚪ no CI in this repo"));
-	t("✗ Ready proceed on no checks reported without --no-ci is refused", throws(() => record(null, { stage: "ready", decision: "proceed", head: "a1", ci: none })));
-	t("✗ --no-ci never turns skipped checks into evidence", throws(() => record(null, { stage: "ready", decision: "proceed", head: "a1", ci: { ...none, reason: "CI not run at a1: every required check skipped (4)" }, noCi: true })));
+	t("✗ Ready proceed on no checks reported without --no-ci is refused", throws(() => record(null, { stage: "ready", decision: "proceed", head: "a1", ci: none, threads: clear("a1") })));
+	t("✗ --no-ci never turns skipped checks into evidence", throws(() => record(null, { stage: "ready", decision: "proceed", head: "a1", ci: { ...none, reason: "CI not run at a1: every required check skipped (4)" }, noCi: true, threads: clear("a1") })));
 	t("docs review / ux skipped are not companion skips", companionDecision(block("docs review skipped (no drift), ux skipped (not a UI diff)"), { uiDiff: false }).decision === "proceed");
 	return done();
 }
@@ -512,11 +545,12 @@ async function main() {
 		}
 		else if (a.record) {
 			const ci = typeof a["ci-file"] === "string" ? JSON.parse(readFileSync(a["ci-file"], "utf8").replace(/\n?CI: .*\s*$/, "")) : null;
+			const threads = typeof a["threads-file"] === "string" ? JSON.parse(readFileSync(a["threads-file"], "utf8").replace(/\n?THREADS: .*\s*$/, "")) : null;
 			// --no-ci is a claim about the repo, so the script checks it rather than taking the flag's word.
 			const ciDir = typeof a["repo-dir"] === "string" ? a["repo-dir"] : process.cwd();
 			if (a["no-ci"] && a.pr && !repoMatchesPr(ciDir, String(a.pr))) throw new Error(`--no-ci: ${ciDir} is not a clone of the PR's repository (origin differs), so it cannot say the repo has no CI; run from the clone or pass --repo-dir`);
 			if (a["no-ci"] && repoHasCi(ciDir)) throw new Error("--no-ci: this repo has a workflow that runs on pull_request or push, so no checks reported is not \"no CI\"");
-			const s = record(parse(readBody(a)), { stage: a.stage, decision: a.decision, head: a.head, reason: a.reason === true ? "" : a.reason || "", pr: a.pr, ci, preflight: typeof a.preflight === "string" ? a.preflight : null, noCi: !!a["no-ci"], backfill: !!a.backfill });
+			const s = record(parse(readBody(a)), { stage: a.stage, decision: a.decision, head: a.head, reason: a.reason === true ? "" : a.reason || "", pr: a.pr, ci, threads, preflight: typeof a.preflight === "string" ? a.preflight : null, noCi: !!a["no-ci"], backfill: !!a.backfill });
 			process.stdout.write(`${render(s)}\n`);
 			// Deliver is display-only in the state; its telemetry is the bus event rules/deliver.md names.
 			if (STAGES.includes(a.stage) && !a.backfill) await markDecision({

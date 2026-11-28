@@ -5,12 +5,14 @@
 // and the PR body has no deployment-verify contract that names a flag (a small change the author
 // classed with an `atelier:no-flag` marker is the exception, unless a hard trigger hits), when a repo with a hosted
 // production service gets a PR with neither a contract nor a `deployment-verify:none` opt-out, or when
-// the PR's verify report does not show every acceptance criterion proven (the proof half).
+// the PR's verify report does not show every acceptance criterion proven (the proof half), or when a review
+// thread is still unresolved on the head (the threads half).
 // Owns no detector of its own:
 //   CI ran green  = prepare's scripts/ci-ran.mjs (ciStatus/classify), read at the head right now
 //   user-visible  = ui-verify's scripts/is-ui-diff.mjs, run by path
 //   flag contract = deployment-verify's parseContract() from scripts/tick.mjs
 //   proof         = aw-verify's checkReport() from scripts/verify-comment.mjs (the `--check` gate)
+//   threads       = prepare's scripts/threads.mjs (threadStatus/classify), read at the head right now
 //
 //   node merge-gate.mjs --pr <n|url>                          files, body, and CI via gh
 //   node merge-gate.mjs --pr <n|url> --early                  the contract, and a verify report in the template shape; no CI read,
@@ -18,6 +20,7 @@
 //   node merge-gate.mjs --pr <n|url> --contract-only          the contract half only (decision-log's user_visible fill)
 //   node merge-gate.mjs --files "a.tsx,b.md" --body-file <f> (--rollup-file <json> | --early | --contract-only)   offline;
 //                                                             add --comments-file <json array of bodies> for a report in a comment
+//                                                             add --threads-file <json> (threads.mjs's saved graphql response) for the threads half
 //   add --surface-json '<json>' | --surface-file <path>       forwarded to is-ui-diff; without either,
 //                                                             the surface in <repo-dir>/.agents/aw/ui.yml is used
 //   add --files-json <path>                                   offline: `gh pr view --json files` (path, additions, deletions, changeType),
@@ -60,6 +63,30 @@ export async function ciFromRollup(json) {
 	const { classify, fromResponses, normalize } = await prepareModule("ci-ran.mjs");
 	const { head, nodes } = fromResponses([json]);
 	return classify(nodes.map(normalize), { head });
+}
+
+// Review threads at the PR's current head, through prepare's threads.mjs; `run` is injectable for tests.
+export async function threadsCheck(pr, { run, expectedHead = null } = {}) {
+	const { threadStatus } = await prepareModule("threads.mjs");
+	return threadStatus(pr, { ...(run ? { run } : {}), expectedHead });
+}
+
+// The same decision from a saved `gh api graphql` response of threads.mjs's query (offline mode).
+export async function threadsFromResponse(json, { expectedHead = null } = {}) {
+	const { classify, fromResponses } = await prepareModule("threads.mjs");
+	const { head, nodes } = fromResponses([json]);
+	return classify(nodes, { head, expectedHead });
+}
+
+const THREADS_HOW = {
+	open: "Record this on Ready (failed), then run /atelier <pr> again: --next returns ready, and Ready runs prepare, whose implement-suggestion --resolve-all applies and resolves the threads. A thread only a human can answer: record Ready hold with Needs you: <thread link>, never merge past it.",
+	pending: "The head moved while the gate read it: run the gate again on the new head.",
+};
+
+// A merge needs every review thread resolved on this head; an unresolved thread, outdated or not, is refused.
+export function decideThreads(th) {
+	if (th.state === "clear") return null;
+	return { decision: "refuse", reason: `review threads ${th.state}: ${th.reason}`, how: THREADS_HOW[th.state] ?? THREADS_HOW.open };
 }
 
 // The proof half: aw-verify's own end-of-run gate over the PR body and its comments (newest first).
@@ -371,7 +398,7 @@ export function decideCi(ci, { noCi = false } = {}) {
 }
 
 const STATE_RE = /<!-- atelier:v1:state (\{.*?\}) -->/s;
-const STATE_HOW = "Record Ready before the merge: node state.mjs --record --stage ready --decision proceed --head <sha> --ci-file ci.json --pr <url> > next.md, then --upsert it (SKILL.md, Stages step 1). A reconstructed (--backfill) entry is for after the merge and does not count here.";
+const STATE_HOW = "Record Ready before the merge: node state.mjs --record --stage ready --decision proceed --head <sha> --ci-file ci.json --threads-file threads.json --pr <url> > next.md, then --upsert it (SKILL.md, Stages step 1). A reconstructed (--backfill) entry is for after the merge and does not count here.";
 
 // The atelier comment's Ready entry must be a live `proceed` on `head`. null when it is.
 export function readyRecordProblem(comments, head) {
@@ -387,9 +414,10 @@ export function readyRecordProblem(comments, head) {
 }
 
 // `ci` is ci-ran.mjs's result for the head and `comments` the PR's comment bodies (newest first) the proof
-// half reads with the body; both `null` only for the contract-only early gate. Halves decide in order: contract, CI, proof.
+// half reads with the body; both `null` only for the contract-only early gate. `threads` is threads.mjs's result for the head,
+// `null` when not read. Halves decide in order: contract, CI, threads, proof, state.
 // `early`: the contract and the report's shape after Build; no CI, no --proven.
-export async function gate({ files, body, surfaceJson, surfaceFile, repoDir = process.cwd(), ci = null, comments = null, early = false, noCiRepoKnown = true, requireState = false, stats = null }) {
+export async function gate({ files, body, surfaceJson, surfaceFile, repoDir = process.cwd(), ci = null, threads = null, comments = null, early = false, noCiRepoKnown = true, requireState = false, stats = null }) {
 	if (!surfaceJson && !surfaceFile) surfaceJson = await repoSurface(repoDir);
 	const ui = userVisible(files, { surfaceJson, surfaceFile });
 	const contract = await flagContract(body, repoDir);
@@ -404,6 +432,8 @@ export async function gate({ files, body, surfaceJson, surfaceFile, repoDir = pr
 	const ciRefusal = d.decision === "pass" && ci ? decideCi(ci, { noCi }) : null;
 	if (ciRefusal) [d, refusedBy] = [ciRefusal, "ci"];
 	else if (noCi && d.decision === "pass") d = { ...d, reason: `${d.reason}; ${NO_CI_NOTE}` };
+	const threadsRefusal = d.decision === "pass" && threads && !early ? decideThreads(threads) : null;
+	if (threadsRefusal) [d, refusedBy] = [threadsRefusal, "threads"];
 	// Tied to the head CI was read at: a report recorded before a later push is not proof of this head.
 	const proof = comments ? await proofCheck({ body, comments, ui: ui.isUI, head: ci?.head ?? null, proven: !early }) : null;
 	const proofRefusal = d.decision === "pass" && proof ? decideProof(proof, { ui: ui.isUI, early }) : null;
@@ -414,11 +444,12 @@ export async function gate({ files, body, surfaceJson, surfaceFile, repoDir = pr
 	if (stateProblem) [d, refusedBy] = [{ decision: "refuse", reason: stateProblem, how: STATE_HOW }, "state"];
 	const skipped = early ? "not checked (--early)" : "not checked (--contract-only)";
 	const ciOut = ci ? { state: ci.state, head: ci.head, reason: noCi ? `${ci.reason}; ${NO_CI_NOTE}` : ci.reason, ...(noCi ? { no_ci: true } : {}) } : skipped;
+	const threadsOut = threads && !early ? { state: threads.state, head: threads.head, count: threads.count, reason: threads.reason } : ci && !early ? "not checked (no thread read)" : skipped;
 	const proofOut = proof ? (proof.length ? proof : "report complete") : skipped;
 	const { proof: _, ...rest } = d;
 	// no_flag_class is set only when the no-flag marker is what let the diff through.
 	const passedNoFlag = d.decision === "pass" && ui.isUI && !contract.has && !!noFlag;
-	return { ...rest, refused_by: refusedBy, user_visible: ui.isUI, hosted, has_flag_contract: contract.has, flag: contract.flag ?? null, no_flag_class: passedNoFlag ? noFlag.class : null, flag_triggers: triggers, warning: d.warning ?? null, ui_files: ui.matched, ci: ciOut, proof: proofOut };
+	return { ...rest, refused_by: refusedBy, user_visible: ui.isUI, hosted, has_flag_contract: contract.has, flag: contract.flag ?? null, no_flag_class: passedNoFlag ? noFlag.class : null, flag_triggers: triggers, warning: d.warning ?? null, ui_files: ui.matched, ci: ciOut, threads: threadsOut, proof: proofOut };
 }
 
 async function fromGh(pr, { contractOnly, early = false }) {
@@ -430,7 +461,8 @@ async function fromGh(pr, { contractOnly, early = false }) {
 	const comments = (view.comments || []).map((c) => c.body || "").reverse();
 	// Read last, so the CI answer is about the head as it is right before the merge.
 	const ci = contractOnly || early ? null : await ciCheck(pr);
-	return { files, body, comments, ci, stats: diffStats(view.files) };
+	const threads = contractOnly || early ? null : await threadsCheck(pr, { expectedHead: ci?.head ?? null });
+	return { files, body, comments, ci, threads, stats: diffStats(view.files) };
 }
 
 // A complete checks-only verify report (aw-verify's checksReport over its fixtures), and a green CI rollup.
@@ -543,6 +575,25 @@ async function selfTest() {
 	t("green CI with no verify report refuses on proof", r.decision === "refuse" && r.refused_by === "proof" && /no intent region/.test(r.reason) && /\/aw-verify run checks/.test(r.how), JSON.stringify(r));
 	r = await gate({ files: ["docs/guide.md"], body: PROOF_BODY, repoDir: empty, ci: greenCi, comments: [] });
 	t("green CI with a complete checks-only report passes", r.decision === "pass" && r.refused_by === null && r.proof === "report complete" && /every criterion proven/.test(r.reason), JSON.stringify(r));
+	// The threads half: every review thread resolved on the head CI was read at.
+	const thFile = (n) => JSON.parse(readFileSync(join(skillDir("prepare", "delivery", "PREPARE_DIR"), "scripts", "fixtures", n), "utf8"));
+	const openTh = await threadsFromResponse(thFile("open-threads.json"), { expectedHead: greenCi.head });
+	const clearTh = await threadsFromResponse(thFile("clear-threads.json"), { expectedHead: greenCi.head });
+	r = await gate({ files: ["docs/guide.md"], body: PROOF_BODY, repoDir: empty, ci: greenCi, threads: openTh, comments: [] });
+	t("✗ an unresolved review thread refuses on threads, naming it and the way back to Ready", r.refused_by === "threads" && /1 unresolved/.test(r.reason) && /create-automation-card/.test(r.reason) && /Ready \(failed\)/.test(r.how) && /resolve-all/.test(r.how) && r.threads.state === "open", JSON.stringify(r));
+	r = await gate({ files: ["docs/guide.md"], body: PROOF_BODY, repoDir: empty, ci: greenCi, threads: clearTh, comments: [] });
+	t("✓ every thread resolved passes the threads half and the gate", r.decision === "pass" && r.refused_by === null && r.threads.state === "clear", JSON.stringify(r));
+	r = await gate({ files: ["docs/guide.md"], body: PROOF_BODY, repoDir: empty, ci: greenCi, threads: await threadsFromResponse(thFile("clear-threads.json"), { expectedHead: "fff0000" }), comments: [] });
+	t("✗ threads read on another head are pending and refuse", r.refused_by === "threads" && /pending/.test(r.reason) && /run the gate again/.test(r.how), JSON.stringify(r));
+	r = await gate({ files: ["docs/guide.md"], body: PROOF_BODY, repoDir: empty, ci: { ...greenCi, state: "red", reason: "1 failed" }, threads: openTh, comments: [] });
+	t("red CI still refuses on ci before threads", r.refused_by === "ci", JSON.stringify(r));
+	r = await gate({ files: ["docs/guide.md"], body: "no report", repoDir: empty, ci: greenCi, threads: openTh, comments: [] });
+	t("open threads refuse before proof", r.refused_by === "threads", JSON.stringify(r));
+	r = await gate({ files: ["docs/guide.md"], body: "no report", repoDir: empty, threads: openTh, comments: [], early: true });
+	t("the early gate never reads threads", r.refused_by === "proof" && r.threads === "not checked (--early)", JSON.stringify(r));
+	const thCalls = [];
+	const th = await threadsCheck("https://github.com/acme/web/pull/41", { run: (args) => { thCalls.push(args); return JSON.stringify(thFile("open-threads.json")); } });
+	t("threadsCheck reads the PR through threads.mjs's runner", th.state === "open" && thCalls[0].includes("n=41"), JSON.stringify(th));
 	const stateOf = (sha, extra = {}) => `<!-- atelier:v1 -->\n<!-- atelier:v1:state ${JSON.stringify({ v: 1, stages: { ready: { decision: "proceed", sha, ...extra } } })} -->`;
 	const withState = (c) => gate({ files: ["docs/guide.md"], body: PROOF_BODY, repoDir: empty, ci: greenCi, comments: c, requireState: true });
 	r = await withState([]);
@@ -721,23 +772,25 @@ async function main() {
 		let files;
 		let body;
 		let ci = null;
+		let threads = null;
 		let comments = [];
 		let stats = null;
 		const contractOnly = !!a["contract-only"];
 		const early = !!a.early && !contractOnly;
-		if (a.pr) ({ files, body, comments, ci, stats } = await fromGh(a.pr, { contractOnly, early }));
+		if (a.pr) ({ files, body, comments, ci, threads, stats } = await fromGh(a.pr, { contractOnly, early }));
 		else if (a.files && a["body-file"]) {
 			files = String(a.files).split(/[,\n]/).map((s) => s.trim()).filter(Boolean);
 			body = readFileSync(a["body-file"], "utf8");
 			if (typeof a["rollup-file"] === "string") ci = await ciFromRollup(JSON.parse(readFileSync(a["rollup-file"], "utf8")));
 			else if (!contractOnly && !early) throw new Error("offline mode needs --rollup-file <json> (ci-ran.mjs's query), --early, or --contract-only");
+			if (typeof a["threads-file"] === "string") threads = await threadsFromResponse(JSON.parse(readFileSync(a["threads-file"], "utf8")), { expectedHead: ci?.head ?? null });
 			if (typeof a["comments-file"] === "string") comments = JSON.parse(readFileSync(a["comments-file"], "utf8"));
 			if (typeof a["files-json"] === "string") stats = diffStats(JSON.parse(readFileSync(a["files-json"], "utf8")));
 		} else throw new Error("pass --pr <n>, or --files <list> --body-file <path>");
 		const repoDir = a["repo-dir"] || process.cwd();
 		// No CI is read from the repo, so the repo must be the PR's: under --pr its origin must match; offline, only a named --repo-dir counts.
 		const noCiRepoKnown = a.pr ? repoMatchesPr(repoDir, String(a.pr)) : typeof a["repo-dir"] === "string";
-		const r = await gate({ files, body, surfaceJson: a["surface-json"], surfaceFile: a["surface-file"], repoDir, ci: early ? null : ci, comments: contractOnly ? null : comments, early, noCiRepoKnown, requireState: !!a.pr, stats });
+		const r = await gate({ files, body, surfaceJson: a["surface-json"], surfaceFile: a["surface-file"], repoDir, ci: early ? null : ci, threads: early ? null : threads, comments: contractOnly ? null : comments, early, noCiRepoKnown, requireState: !!a.pr, stats });
 		console.log(JSON.stringify(r, null, 2));
 		if (r.how) console.log(r.how);
 		if (r.warning) console.log(`warning: ${r.warning}`);

@@ -139,6 +139,7 @@ pnpm install                             # from repo root, for packages/
 - A skill-local `install.sh` must accept `--development --quiet`, be idempotent, and write errors to stderr.
 - Name a file an installer symlinks verbatim `<agent-name>.agent.md` or `<name>.rule.md`; reserve `*.template.md` for boilerplate a skill fills in at runtime.
 - Plugins live in `plugins/<name>/` (no build step), listed in `.claude-plugin/marketplace.json`; validate with `claude plugin validate plugins/<name>`.
+- `atelier-guard` (plugin) — hooks scoped to `/atelier` sessions: injects the PR's `THREADS:` and `CI:` lines, denies `gh pr merge` and Ready `proceed` records while review threads are open, blocks Stop once; fails open; `bin/guard.mjs --self-test`
 - Packages live in `packages/` (Nx); never add one without updating `tsconfig.json` references and the `nx.json` release config. VS Code extension commands and internals: [`packages/vscode-agent-tasks/CLAUDE.md`](./packages/vscode-agent-tasks/CLAUDE.md).
 
 ## Evals
