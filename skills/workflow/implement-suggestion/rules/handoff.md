@@ -126,7 +126,9 @@ Apply reviewer suggestions to an existing pull request.
    comments into a single commit. For each entry:
 
    a. Apply that comment's proposed edit using Edit / Write. Touch only the
-      files that comment's pack entry lists.
+      files that comment's pack entry lists. If the entry was widened by a
+      contract sweep, re-run its grep on the edited tree before committing
+      (rules/contract-sweep.md, step 5).
    b. Run the project's fast checks scoped to the touched files (lint +
       typecheck + unit tests) if wired up. This is the FAST per-comment signal;
       it is scoped, so it cannot see a consumer this comment's edit broke in a
