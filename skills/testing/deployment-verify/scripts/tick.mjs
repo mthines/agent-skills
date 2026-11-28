@@ -37,13 +37,11 @@ import { parseYaml } from "./yaml-lite.mjs";
 
 const REPORT_MARKER = "<!-- deployment-verify:v1:report -->";
 const STATE_RE = /<!-- deployment-verify:v1:state (\{.*?\}) -->/s;
-// The JSON fence may sit bare (older PRs) or inside a visible, closed <details> (rules/contract.md § Visible);
-// inside <details>, a reader's explainer with no ``` fence may follow the JSON (rules/contract.md § How to read).
 const CONTRACT_START = "<!-- deployment-verify:v1 -->";
 const CONTRACT_END = "<!-- /deployment-verify:v1 -->";
 const MALFORMED = "contract block malformed: only one ```json fence may sit between the markers";
-// Two alternatives, so the explainer is allowed only after a <details> opener: group 1 is the fence in
-// a <details> block, group 2 a bare fence.
+// Group 1: the JSON fence inside a visible, closed <details> (rules/contract.md § Visible), where a reader's
+// explainer with no ``` fence may follow it (§ How to read). Group 2: a bare fence (older PRs), no explainer.
 const CONTRACT_RE = /<!-- deployment-verify:v1 -->\s*(?:<details>[\s\S]*?<\/summary>\s*```json\s*([\s\S]*?)```(?:(?:(?!```|<!-- \/deployment-verify:v1 -->)[\s\S])*?<\/details>)?|```json\s*([\s\S]*?)```\s*(?:<\/details>)?)\s*<!-- \/deployment-verify:v1 -->/;
 // aw-verify's `intent` region of the PR's verify report (its writer is aw-verify/scripts/verify-comment.mjs;
 // L1 G132 keeps this reader and that writer's parseIntent in step).
