@@ -2,7 +2,8 @@
 // merge-gate.mjs — atelier's deterministic merge gate (rules/merge-gate.md).
 //
 // Refuses a merge when CI did not run green on the PR's current head, when the diff is user-visible
-// and the PR body has no deployment-verify contract that names a flag, when a repo with a hosted
+// and the PR body has no deployment-verify contract that names a flag (a small change the author
+// classed with an `atelier:no-flag` marker is the exception, unless a hard trigger hits), when a repo with a hosted
 // production service gets a PR with neither a contract nor a `deployment-verify:none` opt-out, or when
 // the PR's verify report does not show every acceptance criterion proven (the proof half).
 // Owns no detector of its own:
@@ -19,6 +20,8 @@
 //                                                             add --comments-file <json array of bodies> for a report in a comment
 //   add --surface-json '<json>' | --surface-file <path>       forwarded to is-ui-diff; without either,
 //                                                             the surface in <repo-dir>/.agents/aw/ui.yml is used
+//   add --files-json <path>                                   offline: `gh pr view --json files` (path, additions, deletions, changeType),
+//                                                             what the no-flag triggers count; without it a no-flag marker is refused
 //   add --repo-dir <path>                                     where .agents/aw/ lives (default: cwd)
 //   node merge-gate.mjs --self-test
 //
@@ -31,6 +34,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { globToRegExp } from "./approval-wait.mjs";
 import { isMain, makeTester, parseArgs, skillDir } from "./lib.mjs";
 import { repoHasCi, repoMatchesPr } from "./preflight.mjs";
 import { markGate } from "./telemetry.mjs";
@@ -185,6 +189,92 @@ export function optOut(body) {
 	return m ? { reason: m[1].trim() } : null;
 }
 
+// A small user-visible change may ship without a flag; a big or structural one may not (rules/flag-policy.md).
+// The triggers are the gate's to check and the author cannot override them; the class is the author's word, so it is
+// a closed list. A repo overrides any default under `flag_policy` in .agents/aw/merge.yml.
+export const NO_FLAG_CLASSES = ["bugfix", "copy", "style", "a11y", "refactor", "internal", "already-flagged"];
+export const DEFAULT_FLAG_POLICY = {
+	maxUnflaggedLines: 150,
+	maxNewUiFiles: 2,
+	routeGlobs: ["**/app/**/page.tsx", "**/app/**/page.ts", "**/app/**/page.jsx", "**/app/**/page.js", "**/pages/**"],
+	alwaysFlag: [],
+	classes: NO_FLAG_CLASSES,
+	requireFlag: false,
+};
+export const NO_DEPLOY_VERIFY_WARNING = "no deploy verify runs here: nothing watches this change after the merge";
+
+// `flag_policy` from .agents/aw/merge.yml over the defaults, parsed with deployment-verify's YAML reader; absent file or block → defaults.
+// A value that cannot be read throws: the gate then exits 2 and never merges on a policy it misread.
+export async function loadFlagPolicy(repoDir) {
+	const path = join(repoDir, ".agents", "aw", "merge.yml");
+	if (!existsSync(path)) return DEFAULT_FLAG_POLICY;
+	const { parseYaml } = await deploymentVerifyModule("yaml-lite.mjs");
+	const raw = (parseYaml(readFileSync(path, "utf8")) ?? {}).flag_policy;
+	if (!raw) return DEFAULT_FLAG_POLICY;
+	const list = (v) => (v === undefined || v === null ? undefined : (Array.isArray(v) ? v : [v]).map(String));
+	const number = (v, label) => {
+		if (v === undefined || v === null) return undefined;
+		const n = Number(v);
+		if (!Number.isFinite(n) || n < 0) throw new Error(`.agents/aw/merge.yml flag_policy.${label} must be a non-negative number, got ${v}`);
+		return n;
+	};
+	const classes = list(raw.classes);
+	const unknown = (classes ?? []).filter((c) => !NO_FLAG_CLASSES.includes(c));
+	if (unknown.length) throw new Error(`.agents/aw/merge.yml flag_policy.classes has unknown ${unknown.join(", ")} (one of ${NO_FLAG_CLASSES.join(", ")})`);
+	if (raw.require_flag !== undefined && raw.require_flag !== "always") throw new Error(`.agents/aw/merge.yml flag_policy.require_flag must be "always", got ${raw.require_flag}`);
+	return {
+		maxUnflaggedLines: number(raw.max_unflagged_lines, "max_unflagged_lines") ?? DEFAULT_FLAG_POLICY.maxUnflaggedLines,
+		maxNewUiFiles: number(raw.max_new_ui_files, "max_new_ui_files") ?? DEFAULT_FLAG_POLICY.maxNewUiFiles,
+		routeGlobs: list(raw.route_globs) ?? DEFAULT_FLAG_POLICY.routeGlobs,
+		alwaysFlag: list(raw.always_flag) ?? DEFAULT_FLAG_POLICY.alwaysFlag,
+		classes: classes ?? DEFAULT_FLAG_POLICY.classes,
+		requireFlag: raw.require_flag === "always",
+	};
+}
+
+// `gh pr view --json files` ([{ path, additions, deletions, changeType }]) as { [path]: { status, additions, deletions } }.
+export function diffStats(input) {
+	const files = Array.isArray(input) ? input : input?.files;
+	return Object.fromEntries((files || []).map((f) => [f.path, { status: String(f.changeType || f.status || "").toLowerCase(), additions: Number(f.additions) || 0, deletions: Number(f.deletions) || 0 }]));
+}
+
+// The hard triggers: why this user-visible diff needs a flag whatever the author says. [] = none hit.
+// `null` = unknown (no stats, a UI file missing from them, or a file with no change type): the caller fails closed.
+// `matched` are the diff's UI files (is-ui-diff already leaves tests out); routes and the always-flag list look at every changed file.
+// A route that is renamed or copied into a route glob is a new URL, so it counts as new; a rename adds no code, so it is not a new file.
+export function flagTriggers({ files, matched, stats, policy = DEFAULT_FLAG_POLICY }) {
+	if (!stats || matched.some((p) => !stats[p]) || Object.values(stats).some((f) => !f.status)) return null;
+	const any = (p, globs) => globs.map(globToRegExp).some((re) => re.test(p));
+	const hits = [];
+	const routes = files.filter((p) => ["added", "renamed", "copied"].includes(stats[p]?.status) && any(p, policy.routeGlobs));
+	if (routes.length) hits.push(`new route ${routes[0]}${routes.length > 1 ? ` (+${routes.length - 1} more)` : ""}`);
+	const always = files.filter((p) => any(p, policy.alwaysFlag));
+	if (always.length) hits.push(`${always[0]} is on the repo's always-flag list${always.length > 1 ? ` (+${always.length - 1} more)` : ""}`);
+	const lines = matched.reduce((n, p) => n + stats[p].additions + stats[p].deletions, 0);
+	if (lines > policy.maxUnflaggedLines) hits.push(`${lines} changed UI lines, over the limit of ${policy.maxUnflaggedLines}`);
+	const added = matched.filter((p) => ["added", "copied"].includes(stats[p].status)).length;
+	if (added > policy.maxNewUiFiles) hits.push(`${added} new UI files, over the limit of ${policy.maxNewUiFiles}`);
+	return hits;
+}
+
+// `<!-- atelier:no-flag — <class>: <why> -->` (`already-flagged <flag>: <why>` names the flag): the author's word that
+// this small change needs no rollout. Returns the parts; whether they are acceptable is noFlagProblem()'s call.
+export const NO_FLAG_RE = /<!--\s*atelier:no-flag\b\s*[—–-]*\s*([\s\S]*?)\s*-->/;
+export function parseNoFlag(body) {
+	const match = (body || "").match(NO_FLAG_RE);
+	if (!match) return null;
+	const parts = match[1].trim().match(/^([A-Za-z][A-Za-z0-9-]*)(?:[ \t]+([^\s:]+))?[ \t]*(?::\s*([\s\S]*))?$/);
+	return parts ? { class: parts[1].toLowerCase(), flag: parts[2] || "", reason: (parts[3] || "").trim() } : { class: "", flag: "", reason: "" };
+}
+
+export function noFlagProblem(marker, policy = DEFAULT_FLAG_POLICY) {
+	if (!marker.class) return "the atelier:no-flag marker names no class";
+	if (!policy.classes.includes(marker.class)) return `the atelier:no-flag class "${marker.class}" is not allowed (one of ${policy.classes.join(", ")})`;
+	if (marker.class === "already-flagged" && !marker.flag) return "already-flagged needs the flag key: <!-- atelier:no-flag — already-flagged <flag>: <why> -->";
+	if (!marker.reason) return "the atelier:no-flag marker gives no reason";
+	return null;
+}
+
 // The hosted-repo rule for a non-UI diff: a valid contract (flag or before/after) or an opt-out with a reason.
 function decideHosted(contract, opt) {
 	if (contract.has) return { decision: "pass", reason: `not user-visible, behind flag ${contract.flag}` };
@@ -206,7 +296,28 @@ function decideHosted(contract, opt) {
 	};
 }
 
-export function decide({ isUI, contract, hosted = false, optOut: opt = null }) {
+// A user-visible diff with no flag: allowed only for a small change the author classed, with no hard trigger hit,
+// and in a hosted repo only with the before/after contract that lets Deliver watch the deploy.
+function decideNoFlag({ marker, triggers, contract, hosted, policy, flagRefusal }) {
+	const refuse = (why, how) => ({ decision: "refuse", reason: `user-visible diff, ${why}`, how: how ?? flagRefusal.how });
+	const problem = noFlagProblem(marker, policy);
+	if (problem) return refuse(problem);
+	if (triggers === null) return refuse("the diff's size is unknown, so the no-flag marker cannot be checked", "Run the gate with --pr, or offline with --files-json <gh pr view --json files>, so it can count lines and new files.");
+	if (triggers.length) return { ...flagRefusal, reason: `user-visible diff, a flag is required: ${triggers.join("; ")}` };
+	const label = `no flag (${marker.class}${marker.flag ? ` ${marker.flag}` : ""}): ${marker.reason}`;
+	if (!hosted) return { decision: "pass", reason: `user-visible, ${label}; ${NO_DEPLOY_VERIFY_WARNING}`, warning: NO_DEPLOY_VERIFY_WARNING };
+	if (contract.noFlag) return { decision: "pass", reason: `user-visible, ${label}; verified on the deploy` };
+	const why = contract.missing === "contract" ? "no deployment-verify:v1 contract in the PR body"
+		: `the deployment-verify:v1 contract is not valid (${contract.missing === "flag" ? contract.noFlagDetail || "a flag with no key" : contract.detail})`;
+	return refuse(`a no-flag change in a hosted repo needs a before/after contract: ${why}`, [
+		"Without a flag, Deliver watches the deploy instead. Add the before/after contract to the PR body:",
+		"node <deployment-verify>/scripts/tick.mjs --draft-contract --pr <n>   # prints a draft from the PR's criteria",
+		'fill "service" and "root_spans" (no "flag": it is measured before/after the deploy) and put the JSON between',
+		`<!-- deployment-verify:v1 --> and <!-- /deployment-verify:v1 --> (${CONTRACT_DOC}); or ship the change behind a flag.`,
+	].join("\n"));
+}
+
+export function decide({ isUI, contract, hosted = false, optOut: opt = null, noFlag = null, triggers = null, policy = DEFAULT_FLAG_POLICY }) {
 	if (!isUI) return hosted ? decideHosted(contract, opt) : { decision: "pass", reason: "not user-visible — no UI file in the diff" };
 	if (contract.has) {
 		const reason = `user-visible, behind flag ${contract.flag}`;
@@ -223,16 +334,21 @@ export function decide({ isUI, contract, hosted = false, optOut: opt = null }) {
 	const flagLine = providers.length
 		? `Fill "service" and "root_spans", add "flag": {"key": "<flag>", "provider": "${providers.join('" | "')}"}${contract.cohort === false ? "" : ' and "cohort"'},`
 		: 'Fill "service" and "root_spans", add "flag": {"key": "<flag>"} (release.yml declares no flag provider, so a human flips it),';
-	return {
-		decision: "refuse",
-		reason: `user-visible diff, ${what}`,
-		how: [
-			"Ship the change behind a flag, then add the contract to the PR body before the merge:",
-			"node <deployment-verify>/scripts/tick.mjs --draft-contract --pr <n>   # prints a draft from the PR's criteria",
-			flagLine,
-			`and put the JSON between <!-- deployment-verify:v1 --> and <!-- /deployment-verify:v1 --> (${CONTRACT_DOC}).`,
-		].join("\n"),
-	};
+	const flagHow = [
+		"Ship the change behind a flag, then add the contract to the PR body before the merge:",
+		"node <deployment-verify>/scripts/tick.mjs --draft-contract --pr <n>   # prints a draft from the PR's criteria",
+		flagLine,
+		`and put the JSON between <!-- deployment-verify:v1 --> and <!-- /deployment-verify:v1 --> (${CONTRACT_DOC}).`,
+	];
+	const flagRefusal = { decision: "refuse", reason: `user-visible diff, ${what}`, how: flagHow.join("\n") };
+	if (policy.requireFlag) return flagRefusal;
+	if (noFlag) return decideNoFlag({ marker: noFlag, triggers, contract, hosted, policy, flagRefusal });
+	if (triggers?.length) return { ...flagRefusal, reason: `${flagRefusal.reason}; a flag is required: ${triggers.join("; ")}` };
+	// A change that needs no rollout has a second way through; a hard trigger (above) never does.
+	flagHow.push(
+		`Or, for a small change that needs no rollout (${policy.classes.join(", ")}), add <!-- atelier:no-flag — <class>: <why> --> to the PR body${hosted ? " and the same contract with no \"flag\"" : ""} (rules/flag-policy.md).`,
+	);
+	return { ...flagRefusal, how: flagHow.join("\n") };
 }
 
 // A repo with no workflow that runs on a PR reports no checks on every head; with `noCi` (repoHasCi() false)
@@ -273,12 +389,15 @@ export function readyRecordProblem(comments, head) {
 // `ci` is ci-ran.mjs's result for the head and `comments` the PR's comment bodies (newest first) the proof
 // half reads with the body; both `null` only for the contract-only early gate. Halves decide in order: contract, CI, proof.
 // `early`: the contract and the report's shape after Build; no CI, no --proven.
-export async function gate({ files, body, surfaceJson, surfaceFile, repoDir = process.cwd(), ci = null, comments = null, early = false, noCiRepoKnown = true, requireState = false }) {
+export async function gate({ files, body, surfaceJson, surfaceFile, repoDir = process.cwd(), ci = null, comments = null, early = false, noCiRepoKnown = true, requireState = false, stats = null }) {
 	if (!surfaceJson && !surfaceFile) surfaceJson = await repoSurface(repoDir);
 	const ui = userVisible(files, { surfaceJson, surfaceFile });
 	const contract = await flagContract(body, repoDir);
 	const hosted = await hostedRepo(repoDir);
-	let d = decide({ isUI: ui.isUI, contract, hosted, optOut: optOut(body) });
+	const policy = await loadFlagPolicy(repoDir);
+	const triggers = ui.isUI ? flagTriggers({ files, matched: ui.matched, stats, policy }) : null;
+	const noFlag = parseNoFlag(body);
+	let d = decide({ isUI: ui.isUI, contract, hosted, optOut: optOut(body), noFlag, triggers, policy });
 	let refusedBy = d.decision === "refuse" ? "contract" : null;
 	// noCiRepoKnown: repoDir is the PR's repo (the CLI checks origin under --pr). Unknown → no-CI never passes.
 	const noCi = !!ci && noCiRepoKnown && isNoCiEvidence(ci) && !repoHasCi(repoDir);
@@ -297,19 +416,21 @@ export async function gate({ files, body, surfaceJson, surfaceFile, repoDir = pr
 	const ciOut = ci ? { state: ci.state, head: ci.head, reason: noCi ? `${ci.reason}; ${NO_CI_NOTE}` : ci.reason, ...(noCi ? { no_ci: true } : {}) } : skipped;
 	const proofOut = proof ? (proof.length ? proof : "report complete") : skipped;
 	const { proof: _, ...rest } = d;
-	return { ...rest, refused_by: refusedBy, user_visible: ui.isUI, hosted, has_flag_contract: contract.has, flag: contract.flag ?? null, warning: d.warning ?? null, ui_files: ui.matched, ci: ciOut, proof: proofOut };
+	// no_flag_class is set only when the no-flag marker is what let the diff through.
+	const passedNoFlag = d.decision === "pass" && ui.isUI && !contract.has && !!noFlag;
+	return { ...rest, refused_by: refusedBy, user_visible: ui.isUI, hosted, has_flag_contract: contract.has, flag: contract.flag ?? null, no_flag_class: passedNoFlag ? noFlag.class : null, flag_triggers: triggers, warning: d.warning ?? null, ui_files: ui.matched, ci: ciOut, proof: proofOut };
 }
 
 async function fromGh(pr, { contractOnly, early = false }) {
 	const gh = (args) => execFileSync("gh", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
 	const files = gh(["pr", "diff", String(pr), "--name-only"]).split("\n").filter(Boolean);
-	const view = JSON.parse(gh(["pr", "view", String(pr), "--json", "body,comments"]));
+	const view = JSON.parse(gh(["pr", "view", String(pr), "--json", "body,comments,files"]));
 	const body = view.body || "";
 	// Newest first, as verify-comment.mjs --check reads them.
 	const comments = (view.comments || []).map((c) => c.body || "").reverse();
 	// Read last, so the CI answer is about the head as it is right before the merge.
 	const ci = contractOnly || early ? null : await ciCheck(pr);
-	return { files, body, comments, ci };
+	return { files, body, comments, ci, stats: diffStats(view.files) };
 }
 
 // A complete checks-only verify report (aw-verify's checksReport over its fixtures), and a green CI rollup.
@@ -493,6 +614,100 @@ async function selfTest() {
 	t("hosted: a UI diff still needs a flag contract, the opt-out does not pass it", r.decision === "refuse" && /user-visible/.test(r.reason), JSON.stringify(r));
 	r = await gate({ files: ["scripts/worker.mjs"], body: "no contract", repoDir: noProv });
 	t("not hosted (no deploy detection): a non-UI diff passes as before", r.decision === "pass" && r.hosted === false, JSON.stringify(r));
+	// A small user-visible change may ship without a flag (rules/flag-policy.md): marker + no trigger, and in a hosted repo the before/after contract.
+	const st = (o) => Object.fromEntries(Object.entries(o).map(([path, [changeType, additions, deletions]]) => [path, { path, changeType, additions, deletions }]));
+	const stats = (o) => diffStats(Object.values(st(o)));
+	const HDR = "src/components/Header.tsx";
+	const mark = (text) => `x\n<!-- atelier:no-flag — ${text} -->`;
+	const small = stats({ [HDR]: ["MODIFIED", 3, 2] });
+	t("parseNoFlag: class, flag and reason", JSON.stringify(parseNoFlag(mark("already-flagged newHeader: behind the live flag"))) === JSON.stringify({ class: "already-flagged", flag: "newHeader", reason: "behind the live flag" }) && parseNoFlag(mark("copy: fix a typo")).reason === "fix a typo" && parseNoFlag("no marker") === null);
+	t("parseNoFlag: a class with a digit (a11y) parses and passes its class check", parseNoFlag(mark("a11y: add an aria-label")).class === "a11y" && noFlagProblem(parseNoFlag(mark("a11y: add an aria-label"))) === null);
+	t("diffStats: takes the gh object form and the bare array alike", JSON.stringify(diffStats({ files: [{ path: "a.tsx", additions: 1, deletions: 0, changeType: "MODIFIED" }] })) === JSON.stringify(diffStats([{ path: "a.tsx", additions: 1, deletions: 0, changeType: "MODIFIED" }])));
+	t("noFlagProblem: unknown class, missing reason, and already-flagged with no flag", /not allowed/.test(noFlagProblem(parseNoFlag(mark("tweak: x")))) && /no reason/.test(noFlagProblem(parseNoFlag(mark("copy")))) && /needs the flag key/.test(noFlagProblem(parseNoFlag(mark("already-flagged: x")))) && noFlagProblem(parseNoFlag(mark("bugfix: x"))) === null);
+	r = await gate({ files: [HDR], body: mark("copy: fix a typo in the header"), repoDir: empty, stats: small });
+	t("no flag: a classed small change in a repo that is not hosted passes, saying nothing watches it", r.decision === "pass" && r.no_flag_class === "copy" && r.warning === NO_DEPLOY_VERIFY_WARNING && !r.has_flag_contract && r.flag_triggers.length === 0, JSON.stringify(r));
+	r = await gate({ files: [HDR], body: `${BEFORE_AFTER}\n${mark("bugfix: restore the sort order")}`, repoDir: hostedDir, stats: small });
+	t("no flag: in a hosted repo the marker plus a before/after contract passes, verified on the deploy", r.decision === "pass" && r.no_flag_class === "bugfix" && /verified on the deploy/.test(r.reason) && r.warning === null, JSON.stringify(r));
+	r = await gate({ files: [HDR], body: mark("bugfix: restore the sort order"), repoDir: hostedDir, stats: small });
+	t("no flag: in a hosted repo the marker alone refuses and asks for the before/after contract", r.decision === "refuse" && /needs a before\/after contract/.test(r.reason) && /--draft-contract/.test(r.how), JSON.stringify(r));
+	r = await gate({ files: [HDR], body: `${BEFORE_AFTER.replace(/"service": "ui", /, "")}\n${mark("bugfix: x")}`, repoDir: hostedDir, stats: small });
+	t("no flag: an invalid before/after contract refuses with deployment-verify's reason", r.decision === "refuse" && /missing "service"/.test(r.reason), r.reason);
+	r = await gate({ files: [HDR], body: `${FLAG_BODY}\n${mark("copy: x")}`, repoDir: empty, stats: small });
+	t("a flag contract wins over a marker: it passes as before, with no no-flag class", r.decision === "pass" && r.flag === "newHeader" && r.no_flag_class === null, JSON.stringify(r));
+	const route = stats({ "src/app/billing/page.tsx": ["ADDED", 20, 0] });
+	r = await gate({ files: ["src/app/billing/page.tsx"], body: mark("internal: a small page"), repoDir: empty, stats: route });
+	t("trigger: a new route needs a flag whatever the marker says", r.decision === "refuse" && /a flag is required: new route src\/app\/billing\/page\.tsx/.test(r.reason) && /"flag"/.test(r.how) && !/atelier:no-flag/.test(r.how), JSON.stringify(r));
+	r = await gate({ files: [HDR], body: mark("refactor: split the header"), repoDir: empty, stats: stats({ [HDR]: ["MODIFIED", 120, 60] }) });
+	t("trigger: a diff over the line limit needs a flag", r.decision === "refuse" && /180 changed UI lines, over the limit of 150/.test(r.reason), r.reason);
+	const three = stats({ "src/components/A.tsx": ["ADDED", 5, 0], "src/components/B.tsx": ["ADDED", 5, 0], "src/components/C.tsx": ["ADDED", 5, 0] });
+	r = await gate({ files: Object.keys(three), body: mark("internal: extract"), repoDir: empty, stats: three });
+	t("trigger: more than two new UI files needs a flag", r.decision === "refuse" && /3 new UI files, over the limit of 2/.test(r.reason), r.reason);
+	const noType = diffStats(Object.keys(three).map((path) => ({ path, additions: 5, deletions: 0 })));
+	r = await gate({ files: Object.keys(three), body: mark("internal: extract"), repoDir: empty, stats: noType });
+	t("a file with no change type is unknown, so the marker is refused (fails closed)", r.decision === "refuse" && /size is unknown/.test(r.reason) && r.flag_triggers === null, JSON.stringify(r));
+	const renamed = stats({ "src/app/billing/page.tsx": ["RENAMED", 0, 0] });
+	r = await gate({ files: ["src/app/billing/page.tsx"], body: mark("refactor: move the page"), repoDir: empty, stats: renamed });
+	t("trigger: a page renamed into a route glob is a new route", r.decision === "refuse" && /new route src\/app\/billing\/page\.tsx/.test(r.reason), r.reason);
+	const copied = stats({ "src/app/billing/page.tsx": ["COPIED", 20, 0] });
+	r = await gate({ files: ["src/app/billing/page.tsx"], body: mark("internal: copy"), repoDir: empty, stats: copied });
+	t("trigger: a page copied into a route glob is a new route", r.decision === "refuse" && /new route/.test(r.reason), r.reason);
+	const moved = stats({ "src/components/A.tsx": ["RENAMED", 0, 0], "src/components/B.tsx": ["RENAMED", 0, 0], "src/components/C.tsx": ["RENAMED", 0, 0] });
+	r = await gate({ files: Object.keys(moved), body: mark("refactor: move three components"), repoDir: empty, stats: moved });
+	t("renamed components add no code, so they are not counted as new UI files", r.decision === "pass" && r.no_flag_class === "refactor", JSON.stringify(r));
+	r = await gate({ files: ["src/app/billing/page.tsx"], body: "no contract", repoDir: empty, stats: route });
+	t("a trigger with no marker refuses on the flag, naming the trigger and offering no no-flag way", r.decision === "refuse" && /no <!-- deployment-verify:v1 -->.*a flag is required: new route/.test(r.reason) && !/atelier:no-flag/.test(r.how), r.reason);
+	r = await gate({ files: [HDR], body: mark("tweak: x"), repoDir: empty, stats: small });
+	t("an unknown class refuses", r.decision === "refuse" && /class "tweak" is not allowed/.test(r.reason), r.reason);
+	r = await gate({ files: [HDR], body: mark("copy"), repoDir: empty, stats: small });
+	t("a marker with no reason refuses", r.decision === "refuse" && /no reason/.test(r.reason), r.reason);
+	r = await gate({ files: [HDR], body: mark("copy: fix a typo"), repoDir: empty });
+	t("no stats: the marker is refused (fails closed), saying how to give them", r.decision === "refuse" && /size is unknown/.test(r.reason) && /--files-json/.test(r.how) && r.flag_triggers === null, JSON.stringify(r));
+	r = await gate({ files: [HDR], body: mark("copy: fix a typo"), repoDir: empty, stats: stats({}) });
+	t("a UI file missing from the stats is unknown too", r.decision === "refuse" && /size is unknown/.test(r.reason), r.reason);
+	r = await gate({ files: [HDR], body: mark("already-flagged newHeader: inside the live flag"), repoDir: empty, stats: small });
+	t("already-flagged names the flag and passes", r.decision === "pass" && /no flag \(already-flagged newHeader\)/.test(r.reason), r.reason);
+	r = await gate({ files: [HDR], body: "no contract", repoDir: empty, stats: small });
+	t("without a marker the refusal names both ways through", r.decision === "refuse" && /--draft-contract/.test(r.how) && /atelier:no-flag/.test(r.how) && !/cohort/.test(r.how), r.how);
+	r = await gate({ files: ["docs/guide.md"], body: mark("copy: x"), repoDir: empty, stats: stats({ "docs/guide.md": ["MODIFIED", 1, 1] }) });
+	t("a marker on a docs-only diff changes nothing", r.decision === "pass" && r.no_flag_class === null && !r.user_visible, JSON.stringify(r));
+	// The repo's own policy (.agents/aw/merge.yml flag_policy) over the defaults.
+	const policyDir = mkdtempSync(join(tmpdir(), "atelier-gate-"));
+	mkdirSync(join(policyDir, ".agents", "aw"), { recursive: true });
+	const setPolicy = (yml) => writeFileSync(join(policyDir, ".agents", "aw", "merge.yml"), `version: 1\nflag_policy:\n${yml}`);
+	setPolicy("  max_unflagged_lines: 4\n");
+	r = await gate({ files: [HDR], body: mark("copy: x"), repoDir: policyDir, stats: small });
+	t("policy: a lower max_unflagged_lines refuses a diff the defaults allow", r.decision === "refuse" && /5 changed UI lines, over the limit of 4/.test(r.reason), r.reason);
+	setPolicy("  always_flag:\n    - src/components/Header.tsx\n");
+	r = await gate({ files: [HDR], body: mark("copy: x"), repoDir: policyDir, stats: small });
+	t("policy: an always_flag path needs a flag whatever its size", r.decision === "refuse" && /Header\.tsx is on the repo's always-flag list/.test(r.reason), r.reason);
+	setPolicy("  route_globs: [\"src/screens/**\"]\n");
+	const screen = stats({ "src/screens/Home.tsx": ["ADDED", 9, 0] });
+	r = await gate({ files: ["src/screens/Home.tsx"], body: mark("internal: x"), repoDir: policyDir, stats: screen });
+	t("policy: route_globs replace the default routes", r.decision === "refuse" && /new route src\/screens\/Home\.tsx/.test(r.reason), r.reason);
+	r = await gate({ files: ["src/app/billing/page.tsx"], body: mark("internal: a small page"), repoDir: policyDir, stats: route });
+	t("policy: a default route is no route once route_globs is set", r.decision === "pass", JSON.stringify(r));
+	setPolicy("  classes: [bugfix]\n");
+	r = await gate({ files: [HDR], body: mark("copy: x"), repoDir: policyDir, stats: small });
+	t("policy: a narrowed class list refuses a class the repo dropped", r.decision === "refuse" && /class "copy" is not allowed \(one of bugfix\)/.test(r.reason), r.reason);
+	setPolicy("  require_flag: always\n");
+	r = await gate({ files: [HDR], body: mark("copy: x"), repoDir: policyDir, stats: small });
+	t("policy: require_flag: always keeps the flag rule for every user-visible diff", r.decision === "refuse" && /names no flag|no <!-- deployment-verify:v1/.test(r.reason) && !/atelier:no-flag/.test(r.how), JSON.stringify(r));
+	r = await gate({ files: [HDR], body: FLAG_BODY, repoDir: policyDir, stats: small });
+	t("policy: require_flag: always still passes a flag contract", r.decision === "pass", JSON.stringify(r));
+	for (const [yml, why] of [["  max_unflagged_lines: lots\n", /non-negative number/], ["  classes: [hotfix]\n", /unknown hotfix/], ["  require_flag: never\n", /must be "always"/]]) {
+		setPolicy(yml);
+		let threw = "";
+		try {
+			await loadFlagPolicy(policyDir);
+		} catch (e) {
+			threw = e.message;
+		}
+		t(`policy: ${yml.trim()} throws, so the gate exits 2 and never merges on a misread policy`, why.test(threw), threw);
+	}
+	writeFileSync(join(policyDir, ".agents", "aw", "merge.yml"), "version: 1\napproval:\n  wait_for: [x]\n");
+	t("policy: a merge.yml with no flag_policy gives the defaults", (await loadFlagPolicy(policyDir)) === DEFAULT_FLAG_POLICY && (await loadFlagPolicy(empty)) === DEFAULT_FLAG_POLICY);
+	t("diffStats reads gh's changeType", diffStats([{ path: "a", additions: 1, deletions: 2, changeType: "ADDED" }]).a.status === "added");
+	rmSync(policyDir, { recursive: true, force: true });
 	for (const d of [noProv, withProv, hostedDir]) rmSync(d, { recursive: true, force: true });
 	rmSync(empty, { recursive: true, force: true });
 	rmSync(withSurface, { recursive: true, force: true });
@@ -507,20 +722,22 @@ async function main() {
 		let body;
 		let ci = null;
 		let comments = [];
+		let stats = null;
 		const contractOnly = !!a["contract-only"];
 		const early = !!a.early && !contractOnly;
-		if (a.pr) ({ files, body, comments, ci } = await fromGh(a.pr, { contractOnly, early }));
+		if (a.pr) ({ files, body, comments, ci, stats } = await fromGh(a.pr, { contractOnly, early }));
 		else if (a.files && a["body-file"]) {
 			files = String(a.files).split(/[,\n]/).map((s) => s.trim()).filter(Boolean);
 			body = readFileSync(a["body-file"], "utf8");
 			if (typeof a["rollup-file"] === "string") ci = await ciFromRollup(JSON.parse(readFileSync(a["rollup-file"], "utf8")));
 			else if (!contractOnly && !early) throw new Error("offline mode needs --rollup-file <json> (ci-ran.mjs's query), --early, or --contract-only");
 			if (typeof a["comments-file"] === "string") comments = JSON.parse(readFileSync(a["comments-file"], "utf8"));
+			if (typeof a["files-json"] === "string") stats = diffStats(JSON.parse(readFileSync(a["files-json"], "utf8")));
 		} else throw new Error("pass --pr <n>, or --files <list> --body-file <path>");
 		const repoDir = a["repo-dir"] || process.cwd();
 		// No CI is read from the repo, so the repo must be the PR's: under --pr its origin must match; offline, only a named --repo-dir counts.
 		const noCiRepoKnown = a.pr ? repoMatchesPr(repoDir, String(a.pr)) : typeof a["repo-dir"] === "string";
-		const r = await gate({ files, body, surfaceJson: a["surface-json"], surfaceFile: a["surface-file"], repoDir, ci: early ? null : ci, comments: contractOnly ? null : comments, early, noCiRepoKnown, requireState: !!a.pr });
+		const r = await gate({ files, body, surfaceJson: a["surface-json"], surfaceFile: a["surface-file"], repoDir, ci: early ? null : ci, comments: contractOnly ? null : comments, early, noCiRepoKnown, requireState: !!a.pr, stats });
 		console.log(JSON.stringify(r, null, 2));
 		if (r.how) console.log(r.how);
 		if (r.warning) console.log(`warning: ${r.warning}`);

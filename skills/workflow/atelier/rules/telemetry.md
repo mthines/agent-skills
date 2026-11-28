@@ -29,7 +29,7 @@ The scripts record it; [`scripts/telemetry.mjs`](../scripts/telemetry.mjs) is th
 | the next stage opens on a resume; the human wait since the last hold | `state.mjs --next` |
 | `build` ends, `companions` starts; tier, skipped and accepted companions | `state.mjs --companions` |
 | a finished after-Build checklist step | `state.mjs --checkpoint` |
-| gate decision, `refused_by`, `user_visible`, `has_flag_contract`, early or no-CI | `merge-gate.mjs` |
+| gate decision, `refused_by`, `user_visible`, `has_flag_contract`, early or no-CI, the no-flag class that let a diff through (`gate.no_flag_class`), how many flag triggers hit (`gate.flag_triggers`), and which warning a pass carried (`gate.no_provider_warning` or `gate.no_deploy_verify_warning`) | `merge-gate.mjs` |
 | a stage's decision; the next stage opens; a run-ending decision exports the run | `state.mjs --record` |
 | outcome sweep counts; one `atelier.outcome` span per changed outcome | `outcomes.mjs` |
 | the open run's state as one `atelier.run.state` gauge point, at each run boundary above (not the outcome sweep) and at the start and end of every `wait` | `emitState` in `telemetry.mjs`; a run that ends exports it with its trace |

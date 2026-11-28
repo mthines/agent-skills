@@ -751,7 +751,12 @@ export const markGate = guarded(async ({ result, contractOnly, early = false, pr
 		"gate.no_ci": result.ci?.no_ci === true ? true : null,
 		user_visible: typeof result.user_visible === "boolean" ? result.user_visible : null,
 		has_flag_contract: typeof result.has_flag_contract === "boolean" ? result.has_flag_contract : null,
-		"gate.no_provider_warning": result.warning ? true : null,
+		// Two warnings exist; the attribute name says which, so a no-flag pass in an unhosted repo is not read as a no-provider flag pass.
+		"gate.no_provider_warning": /no provider/.test(result.warning || "") ? true : null,
+		"gate.no_deploy_verify_warning": /no deploy verify/.test(result.warning || "") ? true : null,
+		// The class the no-flag marker let through, and how many hard triggers hit (a count: the trigger text names files).
+		"gate.no_flag_class": typeof result.no_flag_class === "string" ? result.no_flag_class : null,
+		"gate.flag_triggers": Array.isArray(result.flag_triggers) && result.flag_triggers.length ? result.flag_triggers.length : null,
 	};
 	appendRecord(dir, { t: "attr", target: "stage", attrs: bag });
 	appendRecord(dir, { t: "attr", target: "run", attrs: bag });
@@ -1073,7 +1078,12 @@ async function selfTest() {
 		const base = received.length;
 		const code = await runWait("ci", [process.execPath, "-e", "process.exit(3)"]);
 		t("wait runs the command and returns its exit code", code === 3 && readLedger(dir).filter((r) => r.t === "wait").length === 2);
-		await markGate({ result: { decision: "pass", user_visible: true, has_flag_contract: true }, contractOnly: false });
+		await markGate({ result: { decision: "pass", user_visible: true, has_flag_contract: false, no_flag_class: "copy", flag_triggers: [] }, contractOnly: false });
+		const gateBag = readLedger(dir).filter((r) => r.t === "attr" && r.target === "stage" && r.attrs?.["gate.no_flag_class"]).at(-1)?.attrs;
+		t("markGate records the no-flag class, and no trigger count when none hit", gateBag?.["gate.no_flag_class"] === "copy" && gateBag?.["gate.flag_triggers"] === null, JSON.stringify(gateBag));
+		await markGate({ result: { decision: "pass", user_visible: true, has_flag_contract: false, no_flag_class: "bugfix", warning: "no deploy verify runs here: nothing watches this change after the merge" }, contractOnly: false });
+		const warnBag = readLedger(dir).filter((r) => r.t === "attr" && r.target === "stage" && r.attrs?.["gate.no_flag_class"] === "bugfix").at(-1)?.attrs;
+		t("a no-deploy-verify warning is its own attribute, not the no-provider one", warnBag?.["gate.no_deploy_verify_warning"] === true && warnBag?.["gate.no_provider_warning"] === null, JSON.stringify(warnBag));
 		const out = await markDecision({ stage: "merge", decision: "proceed", reason: "merged deadbee", head: "abc1234", pr }, env);
 		t("a merge proceed finishes and exports traces then metrics", out?.exported === true && received.slice(base).map((r) => r.path).join() === "/v1/traces,/v1/metrics", JSON.stringify(out));
 		const done0 = gaugeOf(received.at(-1) ?? {});

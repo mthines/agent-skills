@@ -3,9 +3,10 @@ name: atelier
 description: >
   Takes one change from request to merged PR by sequencing existing skills —
   aw builds the draft PR, prepare gets it green, a deterministic gate allows
-  the squash-merge only when a user-visible diff ships behind a
-  deployment-verify flag contract (and, in a repo with a hosted service, every
-  diff carries a contract or an opt-out) — then reads the default-branch
+  the squash-merge only when a user-visible diff that needs a rollout ships
+  behind a deployment-verify flag contract, or a small one carries a classed
+  no-flag marker (and, in a repo with a hosted service, every diff carries a
+  contract or an opt-out) — then reads the default-branch
   pipeline, fixes a red one once, verifies a no-flag change on the deploy with
   deployment-verify, and says what a human does next. Resumable from a sticky PR comment; invoke with /atelier.
 argument-hint: 'setup | <request> | <pr-url|#n> [--ticket <id|url>] [--unattended] [--keep-draft] [--accept-gaps] [--accept-skip <name,…>] [--no-deliver]'
@@ -226,7 +227,7 @@ A Build that fails before a PR exists has nowhere to record: skip step 1, write 
 The build suffix, appended verbatim to every request:
 
 ```text
-Atelier merges this PR. A user-visible change must sit behind a feature flag (reuse an existing flag when one fits), and the PR body must carry a deployment-verify:v1 contract naming it: draft it with `node <deployment-verify>/scripts/tick.mjs --draft-contract --pr <n>`, then fill "flag": {"key": "<flag>"}, adding "provider" and "cohort" only when .agents/aw/release.yml declares a provider, and no "cohort" for a `rollout: pr` provider (format: deployment-verify rules/contract.md). When .agents/aw/release.yml's production environment detects deploys (its `deploy.detect` is not `manual`), every other change carries a contract too: the same draft with "service" and "root_spans" and no "flag", measured before and after its deploy; a change that deploys nothing carries `<!-- deployment-verify:none — <why nothing deployed can change> -->` instead.
+Atelier merges this PR. A user-visible change that adds a surface or flow, changes behaviour users rely on, adds a route, touches a path in `flag_policy.always_flag`, or is large (over 150 changed UI lines or 2 new UI files, unless .agents/aw/merge.yml sets other limits) must sit behind a feature flag (reuse an existing flag when one fits), and the PR body must carry a deployment-verify:v1 contract naming it: draft it with `node <deployment-verify>/scripts/tick.mjs --draft-contract --pr <n>`, then fill "flag": {"key": "<flag>"}, adding "provider" and "cohort" only when .agents/aw/release.yml declares a provider, and no "cohort" for a `rollout: pr` provider (format: deployment-verify rules/contract.md). Unless `flag_policy` in .agents/aw/merge.yml sets `require_flag: always` (then every user-visible change takes a flag), any other user-visible change is small and needs no rollout: it takes no flag, and its PR body carries `<!-- atelier:no-flag — <class>: <why> -->` with the class one of bugfix, copy, style, a11y, refactor, internal, or `already-flagged <flag>` (the change sits inside a flag that already exists), or only those in `flag_policy.classes` when it narrows the list; never pick a class to avoid a flag the rule above requires, because the gate counts those triggers itself ([`rules/flag-policy.md`](./rules/flag-policy.md)). When .agents/aw/release.yml's production environment detects deploys (its `deploy.detect` is not `manual`), every other change carries a contract too: the same draft with "service" and "root_spans" and no "flag", measured before and after its deploy; a change that deploys nothing carries `<!-- deployment-verify:none — <why nothing deployed can change> -->` instead.
 The PR must also carry its acceptance criteria and a verify report proving each one: atelier's gate right after this Build refuses a PR until `verify-comment.mjs --pr <n> --check` prints `report complete` (aw-verify writes it; never by hand).
 ```
 
@@ -529,6 +530,7 @@ After a merge, put the next human step under `Needs you:`, from the first row th
 | has a contract whose flag provider `release.yml` declares | `run /deployment-verify <pr> to roll <flag> out; when release.yml sets hold_after, the rollout waits there for /deployment-verify approve <pr> (tick.mjs --approve) or override <pr> (--override)` |
 | has a contract the gate passed with the no-provider warning | `flip <flag> on by hand — deployment-verify cannot step it here (no provider)` |
 | Deliver's verify ended `hold` or `failed` | the `VERIFY:` line and what [Verify](./rules/deliver.md#verify) puts under `Needs you:` for it |
+| has an `atelier:no-flag` marker (a user-visible diff the gate passed with no flag) | `nothing — no rollout (<class>); verified <outcome>` after Verify passed, or `nothing — no rollout (<class>); no deploy verify runs here` when the gate passed it with that warning |
 | has no user-visible diff | `nothing — not user-visible`, or `nothing — verified <outcome>` after Verify passed |
 
 ## Terminal contract
