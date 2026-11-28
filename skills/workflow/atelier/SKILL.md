@@ -198,7 +198,7 @@ After **every** stage decision, do both, in this order:
 
 1. Record it: `S="${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/state.mjs"; node "$S" --record --stage <s> --decision <d> --head <sha> --reason "<r>" --pr <pr-url> --body-file state.md > next.md && node "$S" --upsert --pr <pr-url> --body-file next.md && mv next.md state.md` ([`rules/state.md`](./rules/state.md)).
    Build's record also takes `--memory "lorekit=<ok|unreachable>,lessons_used=<n>"` ([`rules/telemetry.md` § What you add](./rules/telemetry.md#what-you-add)).
-   Ready `proceed` also takes `--ci-file ci.json`, the CI evidence below; `state.mjs` refuses Ready `proceed` without green evidence at `--head` (exit 2).
+   Ready `proceed` also takes `--ci-file ci.json` and `--threads-file threads.json`, the [CI evidence](#ci-evidence) below; `state.mjs` refuses Ready `proceed` without green CI and clear review threads at `--head` (exit 2).
 2. Write one `bus` event ([`rules/decision-log.md`](./rules/decision-log.md)).
 3. On a `proceed` with a ticket: `Skill("ticket", "move <TICKET> <stage>")`; on Build also `Skill("ticket", "link <TICKET> <pr-url>")`. A tracker failure is one `Degraded:` line, never a stage outcome.
 
@@ -208,7 +208,7 @@ A run that picks up an existing PR writes the comment first: the Build `skipped`
 
 ```text
 ✗ gh pr ready; prepare; merge-gate; prepare --merge        # the PR never shows the run, and the gate refuses at the merge
-✓ record Build skipped → ready → record Ready proceed --ci-file ci.json → merge-gate → merge → record Merge proceed
+✓ record Build skipped → ready → record Ready proceed --ci-file ci.json --threads-file threads.json → merge-gate → merge → record Merge proceed
 ```
 
 **Recording after the fact.** A stage the run did but did not record (the session lost its place, a record call failed) is written afterwards with `--record … --backfill`: the entry reads *reconstructed after the fact* in Run details, carries only checkable facts (the head, `ci.json`, the merge commit), and stays out of the run's telemetry.
@@ -221,8 +221,8 @@ A Build that fails before a PR exists has nowhere to record: skip step 1, write 
 | Stage | Delegation | `proceed` when | Otherwise |
 | --- | --- | --- | --- |
 | **build** | `Skill("aw", "<request> <build suffix>")` (the suffix on its own paragraph), adding `--no-confirm` under `--unattended`; then the [after-Build checklist](#after-build-returns) | aw's `AW RUN COMPLETE` block names a PR URL, every required companion ran (or the user accepted its skip), the [sentinel](#after-build-returns) passes, and the early gate passes | `hold` (reason `skipped: <companions>`), `failed` (reason = aw's `Needs you:` line or the failing check IDs), or `refuse` after a second early-gate refusal |
-| **ready** | unless `--keep-draft`: `gh pr ready <pr-url>` when the PR is a draft, then [wait for the fresh CI run](#after-undrafting); then `Skill("prepare", "<pr-url> --single")`; then the [CI evidence](#ci-evidence); then the [proof](#proof) | prepare printed `Already green` or fixed every PR it touched, `ci-ran.mjs` printed `CI: green`, and `verify-comment.mjs --check --proven` printed `report complete` | `CI: not-run … no checks reported` in a repo with no CI → [No CI](#no-ci); any other `CI: not-run` → `hold`, reason = its `CI not run …` text (prefixed `CI not run: draft — ` under `--keep-draft`); `CI: pending` → [wait](#waiting-for-ci), then `hold` only when still pending after `--max-wait`; `CI: red` or prepare blocked → `failed`, reason = that line; proof still incomplete after one `aw-verify` run → `failed`, reason = `proof: <first problem>` |
-| **merge** | gate first, on the live head: `node "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/merge-gate.mjs" --pr <pr-url>`; exit 0 → [wait for approval](#waiting-for-approval) on the same head; `approved` → `Skill("prepare", "<pr-url> --merge --single")` right away; merged → [finding outcomes](#after-the-merge) | the PR state is `MERGED`; reason = `merged <squash sha>`, plus the gate's `warning:` line when it printed one | gate exit 1 with the JSON's `refused_by` = `ci` and `pending` → [wait for CI](#waiting-for-ci), then run the gate again once; any other `ci` refusal, or a wait that ended `pending`, records **Ready** (not Merge) `hold` (`not-run`, `pending`) or `failed` (`red`), reason = the `MERGE_GATE:` line, so `--next` runs Ready again; `refused_by` = `proof` → record **Ready** `failed`, reason = the `MERGE_GATE:` line, so `--next` runs Ready, whose [proof](#proof) step runs `aw-verify`; `refused_by` = `state` → run the Ready record step on the live head (`--record --stage ready --decision proceed --head <sha> --ci-file ci.json`), then run the gate again once; `refused_by` = `contract` → `refuse`, reason = the `MERGE_GATE:` line; approval `manual` or `pending` → Merge `hold`, reason = the `APPROVAL_WAIT:` line, `Needs you:` as the [approval exit table](#waiting-for-approval) says; approval `moved` → run the gate again on the new head once, then wait again; a second `moved` → Merge `hold`, reason = that line; prepare blocked → `hold`, reason = its line |
+| **ready** | unless `--keep-draft`: `gh pr ready <pr-url>` when the PR is a draft, then [wait for the fresh CI run](#after-undrafting); then `Skill("prepare", "<pr-url> --single")`; then the [CI evidence](#ci-evidence); then the [proof](#proof) | prepare printed `Already green` or fixed every PR it touched, `ci-ran.mjs` printed `CI: green`, `threads.mjs` printed `THREADS: clear`, and `verify-comment.mjs --check --proven` printed `report complete` | `CI: not-run … no checks reported` in a repo with no CI → [No CI](#no-ci); any other `CI: not-run` → `hold`, reason = its `CI not run …` text (prefixed `CI not run: draft — ` under `--keep-draft`); `CI: pending` → [wait](#waiting-for-ci), then `hold` only when still pending after `--max-wait`; `CI: red` or prepare blocked → `failed`, reason = that line; `THREADS: open` after prepare → `hold`, reason = that line, `Needs you: <thread links>` (prepare left them for a human); proof still incomplete after one `aw-verify` run → `failed`, reason = `proof: <first problem>` |
+| **merge** | gate first, on the live head: `node "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/merge-gate.mjs" --pr <pr-url>`; exit 0 → [wait for approval](#waiting-for-approval) on the same head; `approved` → `Skill("prepare", "<pr-url> --merge --single")` right away; merged → [finding outcomes](#after-the-merge) | the PR state is `MERGED`; reason = `merged <squash sha>`, plus the gate's `warning:` line when it printed one | gate exit 1 with the JSON's `refused_by` = `ci` and `pending` → [wait for CI](#waiting-for-ci), then run the gate again once; any other `ci` refusal, or a wait that ended `pending`, records **Ready** (not Merge) `hold` (`not-run`, `pending`) or `failed` (`red`), reason = the `MERGE_GATE:` line, so `--next` runs Ready again; `refused_by` = `threads` → record **Ready** `failed`, reason = the `MERGE_GATE:` line, so `--next` runs Ready, whose `prepare` resolves the threads; `refused_by` = `proof` → record **Ready** `failed`, reason = the `MERGE_GATE:` line, so `--next` runs Ready, whose [proof](#proof) step runs `aw-verify`; `refused_by` = `state` → run the Ready record step on the live head (`--record --stage ready --decision proceed --head <sha> --ci-file ci.json --threads-file threads.json`), then run the gate again once; `refused_by` = `contract` → `refuse`, reason = the `MERGE_GATE:` line; approval `manual` or `pending` → Merge `hold`, reason = the `APPROVAL_WAIT:` line, `Needs you:` as the [approval exit table](#waiting-for-approval) says; approval `moved` → run the gate again on the new head once, then wait again; a second `moved` → Merge `hold`, reason = that line; prepare blocked → `hold`, reason = its line |
 
 The build suffix, appended verbatim to every request:
 
@@ -286,11 +286,20 @@ After `prepare` returns, re-read the head (`prepare` may have pushed a fix), rea
 ```bash
 SHA=$(gh pr view <pr-url> --json headRefOid -q .headRefOid)
 node "${PREPARE_DIR:-$HOME/.claude/skills/prepare}/scripts/ci-ran.mjs" --pr <pr-url> --head "$SHA" > ci.json; tail -1 ci.json
+node "${PREPARE_DIR:-$HOME/.claude/skills/prepare}/scripts/threads.mjs" --pr <pr-url> --head "$SHA" > threads.json; tail -1 threads.json
+```
+
+`prepare` always runs, even when CI is already green: it is what applies and resolves review threads.
+`THREADS: clear` is the only line that allows Ready `proceed`; a thread `prepare` left open needs a human, so Ready records `hold` with `Needs you: <thread links>`, never `proceed`.
+
+```text
+✗ CI green, 2 Cursor threads open → Ready proceed --ci-file ci.json
+✓ threads.mjs → THREADS: open — 2 unresolved at 5c786a5: cursor card.tsx:45, … → Ready hold, Needs you: the 2 threads
 ```
 
 `CI: pending` here goes to [Waiting for CI](#waiting-for-ci), which rewrites `ci.json` when the wait ends.
 
-`CI: green` is the only line that allows Ready `proceed`, recorded with `--head "$SHA" --ci-file ci.json`.
+`CI: green` is the only CI line that allows Ready `proceed`, recorded with `--head "$SHA" --ci-file ci.json --threads-file threads.json`.
 "CI ran" is the helper's rule, the same one `prepare` uses: a required check, or with none required a GitHub Actions check run, completed without being skipped; an external status (Vercel) counts only when the repo marks it required.
 
 ```text
@@ -304,7 +313,7 @@ A repo with no workflow that runs on pull_request or push (a Homebrew tap, a doc
 When preflight's `ci` row is a gap and `ci-ran.mjs` prints `CI: not-run — CI not run at <sha>: no checks reported`, skip the undraft wait and record Ready `proceed` with `--no-ci`:
 
 ```bash
-node "$S" --record --stage ready --decision proceed --head "$SHA" --ci-file ci.json --no-ci --reason "no CI in this repo" --pr <pr-url> --body-file state.md > next.md
+node "$S" --record --stage ready --decision proceed --head "$SHA" --ci-file ci.json --threads-file threads.json --no-ci --reason "no CI in this repo" --pr <pr-url> --body-file state.md > next.md
 ```
 
 `state.mjs` checks the claim itself: `--no-ci` exits 2 when the repo (cwd, or `--repo-dir`) has a workflow on pull_request or push, or is not a clone of the PR's repo, and it never turns skipped checks into evidence.
@@ -342,7 +351,7 @@ node "$T" wait ci -- node "$W" --pr <pr-url> --head "$SHA" --max-wait <minutes> 
 
 | Exit | Last line | Do |
 | --- | --- | --- |
-| 0 | `CI_WAIT: green` | carry on: Ready `proceed` with `--ci-file ci.json`, or the gate again before a merge |
+| 0 | `CI_WAIT: green` | carry on: Ready `proceed` with `--ci-file ci.json --threads-file threads.json`, or the gate again before a merge |
 | 1 | `CI_WAIT: red` | Ready `failed`, reason = that line; `prepare` fixes it on the next Ready |
 | 1 | `CI_WAIT: not-run` | no check started within 5 minutes: Ready `hold`, reason = its `CI not run …` text |
 | 3 | `CI_WAIT: pending` | still running after `--max-wait`: Ready `hold`, reason = that line, `Needs you: re-run /atelier <pr-url> when CI finishes` |

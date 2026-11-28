@@ -13,7 +13,7 @@ The run's state is one PR comment that starts with `<!-- atelier:v1 -->`, edited
 ## Shape
 
 Per stage (`build`, `ready`, `merge`, and display-only `deliver`): `decision` (`proceed | skipped | refuse | hold | failed`), `at` (ISO 8601), `sha` (head the stage ran on), `reason`.
-A Ready `proceed` also carries `ci`: the `prepare` helper `ci-ran.mjs`'s verdict (`state`, `ran`, `head`, `reason`), passed as `--record … --ci-file ci.json`.
+A Ready `proceed` also carries `ci`: the `prepare` helper `ci-ran.mjs`'s verdict (`state`, `ran`, `head`, `reason`), passed as `--record … --ci-file ci.json`, and `threads`: `prepare`'s `threads.mjs` verdict (`state`, `head`, `count`, `reason`), passed as `--threads-file threads.json`, which must be `clear` at the recorded head.
 `--record` refuses Ready `proceed` (exit 2) unless that verdict is `green` with `ran: true` at `--head`.
 The preflight line is stored at the top level of the state by the first `--record … --preflight "<line>"` and kept by every later record.
 A Build `hold` for companions that did not run carries reason `skipped: <names>`, which `state.mjs --companions` prints.

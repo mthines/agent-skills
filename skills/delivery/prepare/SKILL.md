@@ -44,8 +44,10 @@ For each PR in `PRS`:
 
 ```bash
 gh pr view <n> --json mergeable,mergeStateStatus,statusCheckRollup,reviewDecision,headRefName,baseRefName
-gh api graphql -f query='query($o:String!,$r:String!,$n:Int!){repository(owner:$o,name:$r){pullRequest(number:$n){reviewThreads(first:100){nodes{isResolved}}}}}' -F o=<owner> -F r=<repo> -F n=<n>
+node "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/prepare}/scripts/threads.mjs" --pr <pr-url>
 ```
+
+`threads.mjs` prints `THREADS: clear|open|pending — <reason>` last, naming each unresolved thread (outdated ones count); exit 0 only for `clear`.
 
 A PR needs work when `mergeable` is `CONFLICTING`, any check is failing, or any review thread is unresolved.
 
