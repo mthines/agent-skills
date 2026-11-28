@@ -44,6 +44,7 @@ export function classify(nodes, { head = null, expectedHead = null } = {}) {
 export function fromResponses(pages) {
 	const pr = pages[0]?.data?.repository?.pullRequest;
 	if (!pr?.headRefOid) throw new Error("not a gh api graphql response of threads.mjs's query (no pullRequest.headRefOid)");
+	if (pages.at(-1)?.data?.repository?.pullRequest?.reviewThreads?.pageInfo?.hasNextPage) throw new Error("the response stops at a page that has more threads (hasNextPage): save every page");
 	const head = pages[0]?.data?.repository?.pullRequest?.headRefOid ?? null;
 	const nodes = pages.flatMap((p) => p?.data?.repository?.pullRequest?.reviewThreads?.nodes ?? []);
 	return { head, nodes };
@@ -110,6 +111,13 @@ function selfTest() {
 		threw = e.message;
 	}
 	t("a GraphQL error throws, never reads as clear", /denied/.test(threw));
+	let truncated = "";
+	try {
+		fromResponses([JSON.parse(page([th(true)], "C1"))]);
+	} catch (e) {
+		truncated = e.message;
+	}
+	t("a saved response cut off before its last page throws, never reads as clear", /hasNextPage/.test(truncated));
 	for (const bad of [{ state: "open", head: "abc1234def", count: 2 }, { data: { repository: { pullRequest: null } } }]) {
 		let msg = "";
 		try {

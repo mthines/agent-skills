@@ -211,7 +211,7 @@ A run that picks up an existing PR writes the comment first: the Build `skipped`
 ✓ record Build skipped → ready → record Ready proceed --ci-file ci.json --threads-file threads.json → merge-gate → merge → record Merge proceed
 ```
 
-**Recording after the fact.** A stage the run did but did not record (the session lost its place, a record call failed) is written afterwards with `--record … --backfill`: the entry reads *reconstructed after the fact* in Run details, carries only checkable facts (the head, `ci.json`, the merge commit), and stays out of the run's telemetry.
+**Recording after the fact.** A stage the run did but did not record (the session lost its place, a record call failed) is written afterwards with `--record … --backfill`: the entry reads *reconstructed after the fact* in Run details, carries only checkable facts (the head, `ci.json`, `threads.json`, the merge commit), and stays out of the run's telemetry.
 The merge gate never accepts a backfilled Ready as the live record, so a backfill is for a merge that already happened, not a way past the gate.
 Say so under `Degraded:` (`state recorded after the fact: <stages>`).
 
